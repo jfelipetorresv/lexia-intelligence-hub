@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Loader2,
   Upload,
@@ -9,6 +9,7 @@ import {
   FileSpreadsheet,
   FileImage,
   File,
+  Folder,
   FolderOpen,
   Link2,
   ChevronDown,
@@ -155,6 +156,7 @@ function PreviewModal({ preview, onClose }: { preview: PreviewState; onClose: ()
 // ─── Drop Zone ───
 function DropZone({ onFiles, disabled }: { onFiles: (files: globalThis.File[]) => void; disabled: boolean }) {
   const [dragging, setDragging] = useState(false);
+  const [folderWarning, setFolderWarning] = useState(false);
   const dragCounter = useRef(0);
 
   return (
@@ -165,17 +167,48 @@ function DropZone({ onFiles, disabled }: { onFiles: (files: globalThis.File[]) =
       onDrop={(e) => {
         e.preventDefault(); e.stopPropagation(); dragCounter.current = 0; setDragging(false);
         if (disabled) return;
+        setFolderWarning(false);
+
+        // Detect folders via webkitGetAsEntry
+        const items = e.dataTransfer.items;
+        if (items?.length) {
+          let hasFolder = false;
+          const realFiles: globalThis.File[] = [];
+          for (let i = 0; i < items.length; i++) {
+            const entry = items[i].webkitGetAsEntry?.();
+            if (entry?.isDirectory) {
+              hasFolder = true;
+            } else {
+              const file = items[i].getAsFile();
+              if (file && file.size > 0) realFiles.push(file);
+            }
+          }
+          if (hasFolder) {
+            setFolderWarning(true);
+            setTimeout(() => setFolderWarning(false), 5000);
+            // Still upload any regular files that were dragged alongside
+            if (realFiles.length > 0) onFiles(realFiles);
+            return;
+          }
+          if (realFiles.length > 0) { onFiles(realFiles); return; }
+        }
+
+        // Fallback: use dataTransfer.files
         const fl = e.dataTransfer.files;
-        console.log("[DropZone] Archivos recibidos:", fl.length);
-        if (fl.length > 0) onFiles(Array.from(fl));
+        if (fl.length > 0) onFiles(Array.from(fl).filter((f) => f.size > 0));
       }}
-      className={`flex items-center justify-center rounded-sm border-2 border-dashed transition-colors ${dragging ? "border-[#008080] bg-[#008080]/10" : "border-[#008080]/40 bg-transparent"} ${disabled ? "opacity-50" : ""}`}
-      style={{ height: "80px" }}
+      className={`flex flex-col items-center justify-center gap-1 rounded-sm border-2 border-dashed transition-colors ${dragging ? "border-[#008080] bg-[#008080]/10" : "border-[#008080]/40 bg-transparent"} ${disabled ? "opacity-50" : ""}`}
+      style={{ minHeight: "80px" }}
     >
       <div className="flex items-center gap-2 text-[#8B8C8E]">
         <Upload className="h-4 w-4 text-[#008080]" />
-        <span className="text-xs font-medium">Arrastra archivos o carpetas aqu&iacute;</span>
+        <span className="text-xs font-medium">Arrastra archivos aqu&iacute;</span>
       </div>
+      {folderWarning && (
+        <p className="text-[11px] text-amber-600 font-medium">
+          Para subir carpetas usa el bot&oacute;n &quot;Subir carpeta&quot;
+        </p>
+      )}
     </div>
   );
 }
@@ -205,6 +238,22 @@ export function DocumentosPanel({ procesoId, onedriveFolderPath: initialPath }: 
   const localFolderInputRef = useRef<HTMLInputElement>(null);
   const uploadMenuRef = useRef<HTMLDivElement>(null);
   const localUploadMenuRef = useRef<HTMLDivElement>(null);
+
+  // Set webkitdirectory via DOM — React filters non-standard attributes in JSX
+  useEffect(() => {
+    if (localFolderInputRef.current) {
+      localFolderInputRef.current.setAttribute("webkitdirectory", "");
+      localFolderInputRef.current.setAttribute("directory", "");
+      localFolderInputRef.current.multiple = true;
+      console.log("[FolderInput Local] atributos seteados via DOM:", localFolderInputRef.current.getAttribute("webkitdirectory"), localFolderInputRef.current.multiple);
+    }
+    if (odFolderInputRef.current) {
+      odFolderInputRef.current.setAttribute("webkitdirectory", "");
+      odFolderInputRef.current.setAttribute("directory", "");
+      odFolderInputRef.current.multiple = true;
+      console.log("[FolderInput OD] atributos seteados via DOM:", odFolderInputRef.current.getAttribute("webkitdirectory"), odFolderInputRef.current.multiple);
+    }
+  }, []);
 
   // When folderPath changes (new link), reset currentPath and load
   useEffect(() => {
@@ -268,7 +317,11 @@ export function DocumentosPanel({ procesoId, onedriveFolderPath: initialPath }: 
     setLoadingLocal(true);
     try {
       const res = await fetch(`/api/documentos-local?procesoId=${procesoId}`);
-      if (res.ok) { const data = await res.json(); setLocalDocs(data.documentos); }
+      if (res.ok) {
+        const data = await res.json();
+        const unique = (data.documentos as LocalDoc[]).filter((d, i, arr) => arr.findIndex((x) => x.id === d.id) === i);
+        setLocalDocs(unique);
+      }
     } catch { /* silent */ } finally { setLoadingLocal(false); }
   }
 
@@ -348,20 +401,21 @@ export function DocumentosPanel({ procesoId, onedriveFolderPath: initialPath }: 
     } catch { setError("Error al subir el archivo"); } finally { setUploading(false); }
   }
 
-  async function handleMultiUpload(fileList: FileList) {
-    if (!folderPath || fileList.length === 0) return;
-    setUploading(true); setUploadProgress({ current: 0, total: fileList.length }); setError(null);
+  async function handleMultiUpload(files: globalThis.File[] | FileList) {
+    const arr = Array.from(files);
+    if (!folderPath || arr.length === 0) return;
+    setUploading(true); setUploadProgress({ current: 0, total: arr.length }); setError(null);
     let failed = 0;
-    for (let i = 0; i < fileList.length; i++) {
-      setUploadProgress({ current: i + 1, total: fileList.length });
+    for (let i = 0; i < arr.length; i++) {
+      setUploadProgress({ current: i + 1, total: arr.length });
       try {
         const form = new FormData();
-        form.append("file", fileList[i]); form.append("folderPath", currentPath || folderPath);
+        form.append("file", arr[i]); form.append("folderPath", currentPath || folderPath);
         const res = await fetch("/api/onedrive/upload", { method: "POST", body: form });
         if (!res.ok) failed++;
       } catch { failed++; }
     }
-    if (failed > 0) setError(`Error al subir ${failed} de ${fileList.length} archivos`);
+    if (failed > 0) setError(`Error al subir ${failed} de ${arr.length} archivos`);
     await loadFiles(currentPath || folderPath);
     setUploading(false); setUploadProgress(null);
   }
@@ -380,28 +434,92 @@ export function DocumentosPanel({ procesoId, onedriveFolderPath: initialPath }: 
     } finally { setUploading(false); }
   }
 
-  async function handleLocalMultiUpload(fileList: FileList, preservePaths = false) {
-    if (fileList.length === 0) return;
-    console.log("[handleLocalMultiUpload] Total archivos:", fileList.length, "preservePaths:", preservePaths);
-    setUploading(true); setUploadProgress({ current: 0, total: fileList.length }); setError(null);
+  async function handleLocalMultiUpload(files: globalThis.File[], preservePaths = false) {
+    if (files.length === 0) return;
+    console.log("[handleLocalMultiUpload] Total archivos:", files.length, "preservePaths:", preservePaths);
+    setUploading(true); setUploadProgress({ current: 0, total: files.length }); setError(null);
     let failed = 0;
-    for (let i = 0; i < fileList.length; i++) {
-      setUploadProgress({ current: i + 1, total: fileList.length });
+    let i = 0;
+    for (const file of files) {
+      i++;
+      setUploadProgress({ current: i, total: files.length });
       try {
-        const file = fileList[i];
         const form = new FormData();
         form.append("file", file); form.append("procesoId", procesoId);
         if (preservePaths && file.webkitRelativePath) {
           form.append("subPath", file.webkitRelativePath);
         }
+        console.log(`[handleLocalMultiUpload] Subiendo ${i}/${files.length}: ${file.name} (${file.size} bytes)`);
         const res = await fetch("/api/documentos-local", { method: "POST", body: form });
         if (!res.ok) failed++;
       } catch { failed++; }
     }
-    if (failed > 0) setError(`Error al subir ${failed} de ${fileList.length} archivos`);
+    if (failed > 0) setError(`Error al subir ${failed} de ${files.length} archivos`);
     await loadLocalDocs();
     setUploading(false); setUploadProgress(null);
   }
+
+  // ─── Clean duplicates ───
+  async function handleCleanDuplicates() {
+    // Group by display name, keep only the most recent (first in desc order)
+    const seen = new Map<string, LocalDoc>();
+    const dupeIds: string[] = [];
+    for (const doc of localDocs) {
+      const key = (doc.nombreOriginal || doc.nombre).toLowerCase();
+      if (seen.has(key)) {
+        dupeIds.push(doc.id); // older duplicate
+      } else {
+        seen.set(key, doc);
+      }
+    }
+    if (dupeIds.length === 0) { setError("No se encontraron duplicados"); return; }
+    try {
+      const res = await fetch(`/api/documentos-local?procesoId=${procesoId}&ids=${dupeIds.join(",")}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      await loadLocalDocs();
+    } catch { setError("Error al limpiar duplicados"); }
+  }
+
+  const hasDuplicates = (() => {
+    const names = new Set<string>();
+    for (const doc of localDocs) {
+      const key = (doc.nombreOriginal || doc.nombre).toLowerCase();
+      if (names.has(key)) return true;
+      names.add(key);
+    }
+    return false;
+  })();
+
+  // ─── Local folder grouping ───
+  const [expandedLocalFolders, setExpandedLocalFolders] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const folders = new Set(
+      localDocs
+        .filter((d) => (d.nombreOriginal ?? d.nombre).includes("/"))
+        .map((d) => (d.nombreOriginal ?? d.nombre).split("/")[0])
+    );
+    setExpandedLocalFolders(folders);
+  }, [localDocs]);
+
+  const toggleLocalFolder = (folder: string) => {
+    setExpandedLocalFolders((prev) => {
+      const next = new Set(prev);
+      next.has(folder) ? next.delete(folder) : next.add(folder);
+      return next;
+    });
+  };
+
+  const rootLocalFiles = localDocs.filter((d) => !(d.nombreOriginal ?? d.nombre).includes("/"));
+  const localFolderGroups = localDocs.reduce((acc, doc) => {
+    const name = doc.nombreOriginal ?? doc.nombre;
+    if (name.includes("/")) {
+      const folder = name.split("/")[0];
+      if (!acc[folder]) acc[folder] = [];
+      acc[folder].push(doc);
+    }
+    return acc;
+  }, {} as Record<string, LocalDoc[]>);
 
   // ─── Drop handler ───
   const handleDropFiles = useCallback(async (droppedFiles: globalThis.File[]) => {
@@ -486,16 +604,51 @@ export function DocumentosPanel({ procesoId, onedriveFolderPath: initialPath }: 
     <>
       {/* OneDrive inputs */}
       <input ref={fileInputRef} type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ""; }} />
-      <input ref={multiFileInputRef} type="file" multiple className="hidden" onChange={(e) => { if (e.target.files?.length) handleMultiUpload(e.target.files); e.target.value = ""; }} />
-      <input ref={odFolderInputRef} type="file" multiple className="hidden"
-        {...{ webkitdirectory: "", directory: "" } as React.InputHTMLAttributes<HTMLInputElement>}
-        onChange={(e) => { const fl = e.target.files; console.log("[FolderInput OD] onChange, archivos:", fl?.length ?? 0); if (fl?.length) handleMultiUpload(fl); e.target.value = ""; }} />
+      <input ref={multiFileInputRef} type="file" multiple className="hidden" onChange={(e) => { const files = Array.from(e.target.files || []); e.target.value = ""; if (files.length > 0) handleMultiUpload(files); }} />
+      <input ref={odFolderInputRef} type="file" style={{ display: "none" }}
+        onChange={async (e) => {
+          const files = Array.from(e.target.files ?? []);
+          console.log("[FolderInput OD] onChange disparado, archivos:", files.length, files.map(f => f.name));
+          e.target.value = "";
+          if (files.length > 0) await handleMultiUpload(files);
+        }} />
       {/* Local inputs */}
       <input ref={localFileInputRef} type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLocalUpload(f); e.target.value = ""; }} />
-      <input ref={localMultiFileInputRef} type="file" multiple className="hidden" onChange={(e) => { if (e.target.files?.length) handleLocalMultiUpload(e.target.files); e.target.value = ""; }} />
-      <input ref={localFolderInputRef} type="file" multiple className="hidden"
-        {...{ webkitdirectory: "", directory: "" } as React.InputHTMLAttributes<HTMLInputElement>}
-        onChange={(e) => { const fl = e.target.files; console.log("[FolderInput Local] onChange, archivos:", fl?.length ?? 0); if (fl?.length) handleLocalMultiUpload(fl, true); e.target.value = ""; }} />
+      <input ref={localMultiFileInputRef} type="file" multiple className="hidden" onChange={(e) => { const files = Array.from(e.target.files || []); e.target.value = ""; if (files.length > 0) handleLocalMultiUpload(files); }} />
+      <input ref={localFolderInputRef} type="file" style={{ display: "none" }}
+        onChange={async (e) => {
+          const files = Array.from(e.target.files ?? []);
+          console.log("[FolderInput] archivos capturados antes de reset:", files.length, files.map(f => f.webkitRelativePath));
+          e.target.value = "";
+          if (files.length === 0) return;
+          setUploading(true); setError(null);
+          setUploadProgress({ current: 0, total: files.length });
+          let current = 0;
+          let failed = 0;
+          for (const file of files) {
+            current++;
+            setUploadProgress({ current, total: files.length });
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("procesoId", procesoId);
+            if (file.webkitRelativePath) {
+              formData.append("subPath", file.webkitRelativePath);
+            }
+            console.log(`[FolderInput] Subiendo ${current}/${files.length}: ${file.name}`);
+            try {
+              const res = await fetch("/api/documentos-local", { method: "POST", body: formData });
+              if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                console.error("[FolderInput] Error:", body.error);
+                failed++;
+              }
+            } catch { failed++; }
+          }
+          if (failed > 0) setError(`Error al subir ${failed} de ${files.length} archivos`);
+          setUploadProgress(null);
+          setUploading(false);
+          await loadLocalDocs();
+        }} />
     </>
   );
 
@@ -510,53 +663,52 @@ export function DocumentosPanel({ procesoId, onedriveFolderPath: initialPath }: 
   );
 
   // ═══════════════════════════════════════════
-  // No folder linked
-  // ═══════════════════════════════════════════
-  if (!folderPath) {
-    return (
-      <div className="rounded-sm border border-[#E8E9EA] bg-white p-6">
-        {hiddenInputs}
-        <div className="flex flex-col items-center justify-center py-10">
-          <FolderOpen className="mb-3 h-10 w-10 text-[#8B8C8E]" />
-          <p className="mb-1 text-sm font-medium text-[#060606]">Sin carpeta vinculada</p>
-          <p className="mb-5 text-xs text-[#8B8C8E]">Vincula una carpeta de OneDrive o sube documentos localmente</p>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setShowModal(true)} className="flex items-center gap-2 rounded-sm bg-[#008080] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#006666]">
-              <Link2 className="h-4 w-4" /> Vincular carpeta de OneDrive
-            </button>
-            <UploadDropdown menuRef={localUploadMenuRef} show={showLocalUploadMenu} setShow={setShowLocalUploadMenu}
-              onSingle={() => localFileInputRef.current?.click()}
-              onMulti={() => localMultiFileInputRef.current?.click()}
-              onFolder={() => localFolderInputRef.current?.click()} />
-          </div>
-        </div>
-
-        <div className="mt-4"><DropZone onFiles={handleDropFiles} disabled={uploading} /></div>
-
-        {error && <div className="mt-4 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
-        {uploadProgress && <div className="mt-4">{progressBar}</div>}
-
-        {(localDocs.length > 0 || loadingLocal) && (
-          <div className="mt-6">
-            <h3 className="mb-3 text-xs font-medium uppercase tracking-widest text-[#060606]">Documentos locales</h3>
-            {loadingLocal ? <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-[#008080]" /></div>
-              : <LocalDocsTable docs={localDocs} onClickName={openLocalPreview} />}
-          </div>
-        )}
-
-        <VincularOneDriveModal open={showModal} onClose={() => setShowModal(false)} onSelect={handleVincular} />
-        <PreviewModal preview={preview} onClose={() => setPreview((p) => ({ ...p, open: false }))} />
-      </div>
-    );
-  }
-
-  // ═══════════════════════════════════════════
-  // Folder linked: full explorer view
+  // Single return — inputs always mounted at top level
   // ═══════════════════════════════════════════
   return (
     <div className="rounded-sm border border-[#E8E9EA] bg-white p-6">
       {hiddenInputs}
 
+      {!folderPath ? (
+        <>
+          {/* No folder linked */}
+          <div className="flex flex-col items-center justify-center py-10">
+            <FolderOpen className="mb-3 h-10 w-10 text-[#8B8C8E]" />
+            <p className="mb-1 text-sm font-medium text-[#060606]">Sin carpeta vinculada</p>
+            <p className="mb-5 text-xs text-[#8B8C8E]">Vincula una carpeta de OneDrive o sube documentos localmente</p>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setShowModal(true)} className="flex items-center gap-2 rounded-sm bg-[#008080] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#006666]">
+                <Link2 className="h-4 w-4" /> Vincular carpeta de OneDrive
+              </button>
+              <UploadDropdown menuRef={localUploadMenuRef} show={showLocalUploadMenu} setShow={setShowLocalUploadMenu}
+                onSingle={() => localFileInputRef.current?.click()}
+                onMulti={() => localMultiFileInputRef.current?.click()}
+                onFolder={() => { console.log("[btn] Subir carpeta local clicked, ref:", !!localFolderInputRef.current, "webkitdirectory:", localFolderInputRef.current?.getAttribute("webkitdirectory")); localFolderInputRef.current?.click(); }} />
+            </div>
+          </div>
+
+          <div className="mt-4"><DropZone onFiles={handleDropFiles} disabled={uploading} /></div>
+
+          {error && <div className="mt-4 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
+          {uploadProgress && <div className="mt-4">{progressBar}</div>}
+
+          {(localDocs.length > 0 || loadingLocal) && (
+            <div className="mt-6">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-xs font-medium uppercase tracking-widest text-[#060606]">Documentos locales</h3>
+                {hasDuplicates && (
+                  <button onClick={handleCleanDuplicates} className="text-[11px] font-medium text-amber-600 hover:text-amber-800 hover:underline">
+                    Limpiar duplicados
+                  </button>
+                )}
+              </div>
+              {loadingLocal ? <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-[#008080]" /></div>
+                : <LocalDocsTable rootFiles={rootLocalFiles} folderGroups={localFolderGroups} expandedFolders={expandedLocalFolders} onToggleFolder={toggleLocalFolder} onClickName={openLocalPreview} />}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
       {/* OneDrive linked banner */}
       <div className="mb-4 flex items-center justify-between rounded-sm border border-green-200 bg-green-50 px-4 py-2.5">
         <div className="flex items-center gap-2">
@@ -578,7 +730,7 @@ export function DocumentosPanel({ procesoId, onedriveFolderPath: initialPath }: 
           <UploadDropdown menuRef={uploadMenuRef} show={showUploadMenu} setShow={setShowUploadMenu}
             onSingle={() => fileInputRef.current?.click()}
             onMulti={() => multiFileInputRef.current?.click()}
-            onFolder={() => odFolderInputRef.current?.click()} />
+            onFolder={() => { console.log("[btn] Subir carpeta OD clicked, ref:", !!odFolderInputRef.current, "webkitdirectory:", odFolderInputRef.current?.getAttribute("webkitdirectory")); odFolderInputRef.current?.click(); }} />
         </div>
       </div>
 
@@ -631,16 +783,20 @@ export function DocumentosPanel({ procesoId, onedriveFolderPath: initialPath }: 
               </thead>
               <tbody>
                 {files.filter((f) => f.isFolder).map((folder) => (
-                  <tr key={folder.id} className="border-t border-[#E8E9EA] hover:bg-[#FAFBFC]">
-                    <td className="px-3 py-2.5">
+                  <tr
+                    key={folder.id}
+                    className="border-t border-[#E8E9EA] cursor-pointer bg-[#008080]/5 hover:bg-[#008080]/10 transition-colors"
+                    onClick={() => navigateToFolder(folder.name)}
+                  >
+                    <td className="px-3 py-2.5" colSpan={3}>
                       <div className="flex items-center gap-2">
-                        <FolderOpen className="h-4 w-4 text-[#008080]" />
-                        <button onClick={() => navigateToFolder(folder.name)} className={nameClass}>{folder.name}</button>
+                        <Folder className="h-4 w-4 text-[#008080]" />
+                        <span className="text-[13px] font-medium text-[#060606]">{folder.name}</span>
                       </div>
                     </td>
-                    <td className="hidden whitespace-nowrap px-3 py-2.5 font-data text-[13px] text-[#8B8C8E] sm:table-cell">{formatDate(folder.lastModified)}</td>
-                    <td className="hidden whitespace-nowrap px-3 py-2.5 text-right font-data text-[13px] text-[#8B8C8E] sm:table-cell">—</td>
-                    <td className="px-3 py-2.5 text-center" />
+                    <td className="px-3 py-2.5 text-right">
+                      <ChevronRight className="ml-auto h-3.5 w-3.5 text-[#8B8C8E]" />
+                    </td>
                   </tr>
                 ))}
                 {files.filter((f) => !f.isFolder).map((file) => (
@@ -670,13 +826,23 @@ export function DocumentosPanel({ procesoId, onedriveFolderPath: initialPath }: 
       {/* ── DOCUMENTOS LOCALES ── */}
       {(localDocs.length > 0 || loadingLocal) && (
         <div className="mt-6">
-          <h3 className="mb-3 text-xs font-medium uppercase tracking-widest text-[#060606]">Documentos Locales</h3>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-xs font-medium uppercase tracking-widest text-[#060606]">Documentos Locales</h3>
+            {hasDuplicates && (
+              <button onClick={handleCleanDuplicates} className="text-[11px] font-medium text-amber-600 hover:text-amber-800 hover:underline">
+                Limpiar duplicados
+              </button>
+            )}
+          </div>
           {loadingLocal ? (
             <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-[#008080]" /></div>
           ) : (
-            <LocalDocsTable docs={localDocs} onClickName={openLocalPreview} />
+            <LocalDocsTable rootFiles={rootLocalFiles} folderGroups={localFolderGroups} expandedFolders={expandedLocalFolders} onToggleFolder={toggleLocalFolder} onClickName={openLocalPreview} />
           )}
         </div>
+      )}
+
+        </>
       )}
 
       <VincularOneDriveModal open={showModal} onClose={() => setShowModal(false)} onSelect={handleVincular} />
@@ -685,7 +851,44 @@ export function DocumentosPanel({ procesoId, onedriveFolderPath: initialPath }: 
   );
 }
 
-function LocalDocsTable({ docs, onClickName }: { docs: LocalDoc[]; onClickName: (doc: LocalDoc) => void }) {
+/** Single local file row */
+function LocalFileRow({ doc, onClickName, indented }: { doc: LocalDoc; onClickName: (doc: LocalDoc) => void; indented?: boolean }) {
+  const name = displayName(doc);
+  // If indented (inside folder group), show only the filename part after the folder prefix
+  const label = indented ? name.split("/").slice(1).join("/") || name : name;
+  return (
+    <tr key={doc.id} className="border-t border-[#E8E9EA]">
+      <td className={`px-3 py-2.5 ${indented ? "pl-8" : ""}`}>
+        <div className="flex items-center gap-2">
+          {getFileIcon(label, doc.tipo)}
+          <button onClick={() => onClickName(doc)} className="max-w-[250px] truncate text-[13px] font-medium text-[#060606] cursor-pointer hover:text-[#008080] hover:underline">
+            {label}
+          </button>
+          <span className="inline-flex items-center gap-1 rounded-sm bg-[#FAFBFC] px-1.5 py-0.5 text-[10px] font-medium text-[#8B8C8E]">
+            <HardDrive className="h-2.5 w-2.5" /> Local
+          </span>
+        </div>
+      </td>
+      <td className="hidden whitespace-nowrap px-3 py-2.5 font-data text-[13px] text-[#8B8C8E] sm:table-cell">{formatDate(doc.creadoEn)}</td>
+      <td className="hidden whitespace-nowrap px-3 py-2.5 text-right font-data text-[13px] text-[#8B8C8E] sm:table-cell">{formatFileSize(doc.tamano)}</td>
+      <td className="px-3 py-2.5 text-center">
+        <button onClick={() => window.open(localDownloadUrl(doc.url), "_blank")}
+          className="inline-flex items-center gap-1 rounded-sm border border-[#E8E9EA] px-2 py-1 text-[11px] font-medium text-[#060606] transition-colors hover:border-[#008080] hover:text-[#008080]">
+          <Download className="h-3 w-3" /> Descargar
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function LocalDocsTable({ rootFiles, folderGroups, expandedFolders, onToggleFolder, onClickName }: {
+  rootFiles: LocalDoc[];
+  folderGroups: Record<string, LocalDoc[]>;
+  expandedFolders: Set<string>;
+  onToggleFolder: (folder: string) => void;
+  onClickName: (doc: LocalDoc) => void;
+}) {
+  const folderNames = Object.keys(folderGroups).sort((a, b) => a.localeCompare(b, "es"));
   return (
     <div className="overflow-hidden rounded-sm border border-[#E8E9EA]">
       <table className="w-full">
@@ -698,28 +901,42 @@ function LocalDocsTable({ docs, onClickName }: { docs: LocalDoc[]; onClickName: 
           </tr>
         </thead>
         <tbody>
-          {docs.map((doc) => (
-            <tr key={doc.id} className="border-t border-[#E8E9EA]">
-              <td className="px-3 py-2.5">
-                <div className="flex items-center gap-2">
-                  {getFileIcon(displayName(doc), doc.tipo)}
-                  <button onClick={() => onClickName(doc)} className="max-w-[250px] truncate text-[13px] font-medium text-[#060606] cursor-pointer hover:text-[#008080] hover:underline">
-                    {displayName(doc)}
-                  </button>
-                  <span className="inline-flex items-center gap-1 rounded-sm bg-[#FAFBFC] px-1.5 py-0.5 text-[10px] font-medium text-[#8B8C8E]">
-                    <HardDrive className="h-2.5 w-2.5" /> Local
-                  </span>
-                </div>
-              </td>
-              <td className="hidden whitespace-nowrap px-3 py-2.5 font-data text-[13px] text-[#8B8C8E] sm:table-cell">{formatDate(doc.creadoEn)}</td>
-              <td className="hidden whitespace-nowrap px-3 py-2.5 text-right font-data text-[13px] text-[#8B8C8E] sm:table-cell">{formatFileSize(doc.tamano)}</td>
-              <td className="px-3 py-2.5 text-center">
-                <button onClick={() => window.open(localDownloadUrl(doc.url), "_blank")}
-                  className="inline-flex items-center gap-1 rounded-sm border border-[#E8E9EA] px-2 py-1 text-[11px] font-medium text-[#060606] transition-colors hover:border-[#008080] hover:text-[#008080]">
-                  <Download className="h-3 w-3" /> Descargar
-                </button>
-              </td>
-            </tr>
+          {/* Folder groups */}
+          {folderNames.map((folderName) => {
+            const docs = folderGroups[folderName];
+            const isExpanded = expandedFolders.has(folderName);
+            return (
+              <React.Fragment key={`folder-${folderName}`}>
+                <tr
+                  className="border-t border-[#E8E9EA] cursor-pointer bg-[#008080]/5 hover:bg-[#008080]/10 transition-colors"
+                  onClick={() => onToggleFolder(folderName)}
+                >
+                  <td className="px-3 py-2.5" colSpan={3}>
+                    <div className="flex items-center gap-2">
+                      {isExpanded
+                        ? <FolderOpen className="h-4 w-4 text-[#008080]" />
+                        : <Folder className="h-4 w-4 text-[#008080]" />}
+                      <span className="text-[13px] font-medium text-[#060606]">{folderName}</span>
+                      <span className="rounded-sm bg-[#E8E9EA] px-1.5 py-0.5 text-[10px] font-medium text-[#8B8C8E]">
+                        {docs.length} {docs.length === 1 ? "archivo" : "archivos"}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    {isExpanded
+                      ? <ChevronDown className="ml-auto h-3.5 w-3.5 text-[#8B8C8E]" />
+                      : <ChevronRight className="ml-auto h-3.5 w-3.5 text-[#8B8C8E]" />}
+                  </td>
+                </tr>
+                {isExpanded && docs.map((doc) => (
+                  <LocalFileRow key={doc.id} doc={doc} onClickName={onClickName} indented />
+                ))}
+              </React.Fragment>
+            );
+          })}
+          {/* Root files (no folder) */}
+          {rootFiles.map((doc) => (
+            <LocalFileRow key={doc.id} doc={doc} onClickName={onClickName} />
           ))}
         </tbody>
       </table>

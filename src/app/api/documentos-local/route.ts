@@ -64,6 +64,36 @@ export async function GET(request: NextRequest) {
   }
 }
 
+export async function DELETE(request: NextRequest) {
+  try {
+    const procesoId = request.nextUrl.searchParams.get("procesoId");
+    if (!procesoId) {
+      return NextResponse.json({ error: "procesoId requerido" }, { status: 400 });
+    }
+
+    const ids = request.nextUrl.searchParams.get("ids");
+    if (!ids) {
+      return NextResponse.json({ error: "ids requerido" }, { status: 400 });
+    }
+
+    const idList = ids.split(",").filter(Boolean);
+    if (idList.length === 0) {
+      return NextResponse.json({ error: "No se proporcionaron IDs" }, { status: 400 });
+    }
+
+    // Delete from DB (only matching this proceso for safety)
+    const result = await db.documentoLocal.deleteMany({
+      where: { id: { in: idList }, procesoId },
+    });
+
+    return NextResponse.json({ deleted: result.count });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("Error eliminando documentos locales:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";

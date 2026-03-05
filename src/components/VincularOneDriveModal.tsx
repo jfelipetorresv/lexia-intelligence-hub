@@ -33,6 +33,16 @@ const FILTER_CHIPS = [
   { key: "Responsabilidad Fiscal", label: "Responsabilidad Fiscal" },
 ] as const;
 
+const JURISDICTION_CHIPS = [
+  { key: "", label: "Todos" },
+  { key: "Civil", label: "Civil" },
+  { key: "Administrativo", label: "Administrativo" },
+  { key: "Laboral", label: "Laboral" },
+  { key: "Arbitraje", label: "Arbitraje" },
+] as const;
+
+// Jurisdiction chips are for manual navigation only — search is disabled when active
+
 interface VincularOneDriveModalProps {
   open: boolean;
   onClose: () => void;
@@ -52,10 +62,14 @@ export function VincularOneDriveModal({
   const [filter, setFilter] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [jurisdiction, setJurisdiction] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentPath = pathSegments.join("/");
-  const isTextSearching = search.length >= 3;
+  // When jurisdiction chip is active, disable text search (path info not available from Graph search)
+  const isTextSearching = search.length >= 3 && !jurisdiction;
+
+  const filteredResults = searchResults;
 
   // Determine effective mode:
   // 1. text >= 3 chars → global search (optionally scoped by filter)
@@ -67,6 +81,7 @@ export function VincularOneDriveModal({
     setPathSegments([]);
     setSearch("");
     setFilter("");
+    setJurisdiction("");
     setSearchResults([]);
   }, [open]);
 
@@ -170,6 +185,7 @@ export function VincularOneDriveModal({
 
   function handleFilterChange(key: string) {
     setFilter(key);
+    setJurisdiction("");
     setSearch("");
   }
 
@@ -226,8 +242,9 @@ export function VincularOneDriveModal({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar carpeta..."
-            className="w-full rounded-sm border border-[#E8E9EA] py-1.5 pl-8 pr-3 text-sm text-[#060606] placeholder:text-[#8B8C8E] focus:border-[#008080] focus:outline-none"
+            placeholder={jurisdiction ? "Búsqueda desactivada — navega manualmente" : "Buscar carpeta..."}
+            disabled={!!jurisdiction}
+            className={`w-full rounded-sm border border-[#E8E9EA] py-1.5 pl-8 pr-3 text-sm text-[#060606] placeholder:text-[#8B8C8E] focus:border-[#008080] focus:outline-none ${jurisdiction ? "opacity-50 cursor-not-allowed" : ""}`}
           />
         </div>
 
@@ -248,6 +265,32 @@ export function VincularOneDriveModal({
           ))}
         </div>
 
+        {/* Jurisdiction sub-filter chips — only when a type filter is active */}
+        {filter && (
+          <div className="-my-1 flex flex-col gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
+              {JURISDICTION_CHIPS.map((chip) => (
+                <button
+                  key={chip.key}
+                  onClick={() => { setJurisdiction(chip.key); setSearch(""); }}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                    jurisdiction === chip.key
+                      ? "bg-[#008080] text-white"
+                      : "border border-[#008080] bg-white text-[#008080] hover:bg-[#F0FAFA]"
+                  }`}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+            {jurisdiction && (
+              <p className="text-[11px] text-amber-600">
+                Navega manualmente para filtrar por jurisdicci&oacute;n. La b&uacute;squeda por texto est&aacute; desactivada.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Content area */}
         <div className="min-h-[160px] max-h-[450px] overflow-y-auto rounded-sm border border-[#E8E9EA]">
           {isTextSearching ? (
@@ -256,14 +299,14 @@ export function VincularOneDriveModal({
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin text-[#008080]" />
               </div>
-            ) : searchResults.length === 0 ? (
+            ) : filteredResults.length === 0 ? (
               <p className="py-8 text-center text-sm text-[#8B8C8E]">
                 No se encontraron procesos. Intenta con otro término.
               </p>
             ) : (
               <div>
                 <ul>
-                  {searchResults.map((result) => {
+                  {filteredResults.map((result) => {
                     const parentPath = formatSearchPath(result.path);
                     return (
                       <li key={result.id}>
@@ -290,7 +333,7 @@ export function VincularOneDriveModal({
                   })}
                 </ul>
                 <p className="border-t border-[#E8E9EA] px-3 py-2 text-center text-[11px] text-[#8B8C8E]">
-                  {searchResults.length} {searchResults.length === 1 ? "proceso encontrado" : "procesos encontrados"}
+                  {filteredResults.length} {filteredResults.length === 1 ? "proceso encontrado" : "procesos encontrados"}
                 </p>
               </div>
             )

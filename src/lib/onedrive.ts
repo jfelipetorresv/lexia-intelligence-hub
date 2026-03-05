@@ -158,34 +158,38 @@ export async function searchFolders(query: string, basePath?: string) {
   // Since parentReference.path comes empty in Graph search results,
   // filter exclusively by folder name patterns.
 
-  // INCLUDE patterns — looks like a legal process folder
-  const VS_RE = /\bvs\b/i;
-  const PROCESO_PREFIX_RE = /^Procesos?\s+\d{4}/i;
-  const YEAR_CASE_RE = /\b(20[0-3]\d)-\d+/; // e.g. 2017-00273
-
-  // EXCLUDE patterns — clearly internal document folders
-  const DOCUMENT_SUFFIX_RE = /(?:CONTESTA|CONTESTACION|ALEGATOS|DEMANDA|PRUEBAS)\s*$/i;
-  const ALL_CAPS_NO_DIGITS_RE = /^[A-ZÁÉÍÓÚÑÜ\s]+$/;
-  const SINGLE_WORD_CAPS_RE = /^[A-ZÁÉÍÓÚÑÜ]+$/;
-  const INTERNAL_PREFIX_RE = /^(?:Fase\s+admin|Informes?|Actas?|[0-9]+\.\s)/i;
+  // ── EXCLUDE rules ──
+  const DIGIT_DOT_PREFIX_RE = /^\d+\.\s/;
+  const INTERNAL_PREFIX_RE = /^(?:Fase\s+admin|Informes?|Actas?|Borradores?|Pruebas|Documentos?)\b/i;
+  const SUFFIX_RE = /(?:CONTESTA|CONTESTACION|CONTESTACIÓN|ALEGATOS|DEMANDA|PRUEBAS|BORRADORES|PODERES)\s*$/i;
+  const ALL_CAPS_NO_DIGITS_RE = /^[A-ZÁÉÍÓÚÑÜÇ\s]+$/;
+  const VS_RE = /\b(?:vs|contra)\b/i;
   const EXACT_EXCLUDE = new Set([
-    "civiles", "administrativo", "laborales",
-    "procesos finalizados", "documentos de interes",
+    "civiles", "civil", "administrativo", "administrativos",
+    "laborales", "laboral", "procesos finalizados",
+    "documentos de interes", "documentos de interés",
   ]);
 
-  function isProcessFolder(name: string): boolean {
-    if (VS_RE.test(name)) return true;
-    if (PROCESO_PREFIX_RE.test(name)) return true;
-    if (YEAR_CASE_RE.test(name)) return true;
+  // ── INCLUDE rules ──
+  const YEAR_CASE_RE = /\b(20[0-3]\d)-\d+/;
+  const PROCESO_PREFIX_RE = /^Procesos?\s+\d{4}/i;
+
+  function isExcluded(name: string): boolean {
+    if (DIGIT_DOT_PREFIX_RE.test(name)) return true;
+    if (INTERNAL_PREFIX_RE.test(name)) return true;
+    if (SUFFIX_RE.test(name)) return true;
+    if (EXACT_EXCLUDE.has(name.toLowerCase().trim())) return true;
+    // All-caps without digits and without "vs"/"contra" → internal folder
+    if (ALL_CAPS_NO_DIGITS_RE.test(name) && !VS_RE.test(name) && name.trim().length > 2) return true;
+    // No digits AND no "vs"/"contra" → likely not a process folder
+    if (!/\d/.test(name) && !VS_RE.test(name)) return true;
     return false;
   }
 
-  function isDocumentFolder(name: string): boolean {
-    if (DOCUMENT_SUFFIX_RE.test(name)) return true;
-    if (SINGLE_WORD_CAPS_RE.test(name.trim())) return true;
-    if (ALL_CAPS_NO_DIGITS_RE.test(name) && !VS_RE.test(name) && name.length > 2) return true;
-    if (INTERNAL_PREFIX_RE.test(name)) return true;
-    if (EXACT_EXCLUDE.has(name.toLowerCase().trim())) return true;
+  function isProcessFolder(name: string): boolean {
+    if (VS_RE.test(name)) return true;
+    if (YEAR_CASE_RE.test(name)) return true;
+    if (PROCESO_PREFIX_RE.test(name)) return true;
     return false;
   }
 
@@ -213,9 +217,7 @@ export async function searchFolders(query: string, basePath?: string) {
       };
     })
     .filter((f) => {
-      // Exclude document-like folder names first
-      if (isDocumentFolder(f.name)) return false;
-      // Include only folders that look like legal processes
+      if (isExcluded(f.name)) return false;
       return isProcessFolder(f.name);
     });
 
