@@ -6,7 +6,13 @@
       "Bash(npx prisma:*)",
       "Bash(python3:*)",
       "Bash(node:*)",
-      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"YES\" npx prisma:*)"
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"YES\" npx prisma:*)",
+      "Bash(curl:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(npx next:*)",
+      "Bash(taskkill:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

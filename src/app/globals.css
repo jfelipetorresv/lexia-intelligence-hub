@@ -1,3 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Hind+Guntur:wght@300;400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    /* Lexia Brand Colors */
+    --lexia-black: #060606;
+    --lexia-teal: #008080;
+    --lexia-teal-light: #85d3d4;
+    --lexia-bg: #FAFBFC;
+    --lexia-gray: #8B8C8E;
+    --lexia-white: #FFFFFF;
+    --lexia-border: #E8E9EA;
+
+    /* shadcn tokens mapped to Lexia palette */
+    --background: 210 20% 99%;
+    --foreground: 0 0% 2%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 2%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 2%;
+    --primary: 0 0% 2%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 11% 96%;
+    --secondary-foreground: 0 0% 2%;
+    --muted: 210 11% 96%;
+    --muted-foreground: 210 2% 55%;
+    --accent: 180 100% 25%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 11% 91%;
+    --input: 210 11% 91%;
+    --ring: 180 100% 25%;
+    --chart-1: 180 100% 25%;
+    --chart-2: 180 45% 67%;
+    --chart-3: 0 0% 2%;
+    --chart-4: 210 2% 55%;
+    --chart-5: 180 100% 25%;
+    --radius: 2px;
+  }
+
+  * {
+    @apply border-[#E8E9EA];
+  }
+
+  body {
+    @apply bg-[var(--lexia-bg)] text-[var(--lexia-black)] antialiased;
+    font-family: 'DM Sans', sans-serif;
+  }
+}
+
+/* Hind Guntur for data/table text */
+.font-data {
+  font-family: 'Hind Guntur', sans-serif;
+}

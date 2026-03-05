@@ -339,6 +339,7 @@ model HitoProcesal {
   documentoUrl     String?
   plazoVencimiento DateTime?
   estadoTermino    EstadoTermino?
+  overrideManual   Boolean        @default(false)
   notificado       Boolean        @default(false)
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
