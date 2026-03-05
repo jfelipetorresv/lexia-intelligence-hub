@@ -1,14 +1,435 @@
+// ============================================================
+// LEXIA INTELLIGENCE HUB — SCHEMA COMPLETO v1.0
+// Nivel 2: Modelo de datos relacional
+// ============================================================
+
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
 }
 
-model TestConnection {
-  id        Int      @id @default(autoincrement())
+// ============================================================
+// MULTI-TENANCY
+// ============================================================
+
+model Organizacion {
+  id        String   @id @default(cuid())
+  nombre    String
+  nit       String?  @unique
+  email     String?
+  telefono  String?
+  activa    Boolean  @default(true)
   createdAt DateTime @default(now())
-  message   String
+  updatedAt DateTime @updatedAt
+
+  usuarios Usuario[]
+  clientes Cliente[]
+  abogados Abogado[]
+  procesos Proceso[]
+  polizas  Poliza[]
+
+  @@map("organizaciones")
+}
+
+// ============================================================
+// AUTENTICACIÓN — NextAuth.js
+// ============================================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  usuario       Usuario?
+
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================================
+// USUARIOS DEL SISTEMA
+// ============================================================
+
+enum RolSistema {
+  SUPER_ADMIN
+  ADMIN_ORG
+  SOCIO
+  ASOCIADO
+  ASISTENTE
+}
+
+model Usuario {
+  id             String       @id @default(cuid())
+  userId         String       @unique
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizacionId String
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id])
+  rol            RolSistema
+  activo         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  abogado Abogado?
+
+  @@map("usuarios")
+}
+
+// ============================================================
+// ABOGADOS
+// ============================================================
+
+enum RolAbogado {
+  SOCIO
+  ASOCIADO
+  ASISTENTE
+}
+
+model Abogado {
+  id             String       @id @default(cuid())
+  usuarioId      String?      @unique
+  usuario        Usuario?     @relation(fields: [usuarioId], references: [id])
+  organizacionId String
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id])
+  nombre         String
+  email          String
+  telefono       String?
+  rol            RolAbogado
+  especialidad   String?
+  activo         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  asignaciones    Asignacion[]
+  registrosTiempo RegistroTiempo[]
+
+  @@map("abogados")
+}
+
+// ============================================================
+// CLIENTES
+// Creados y gestionados únicamente por ADMIN_ORG o SUPER_ADMIN
+// ============================================================
+
+enum TipoCliente {
+  ASEGURADORA
+  EMPRESA
+  PERSONA_NATURAL
+  ENTIDAD_PUBLICA
+  OTRO
+}
+
+model Cliente {
+  id             String       @id @default(cuid())
+  organizacionId String
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id])
+  nombre         String
+  nit            String?
+  tipo           TipoCliente
+  sector         String?
+  contactoNombre String?
+  contactoEmail  String?
+  contactoTel    String?
+  activo         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  procesos Proceso[]
+  polizas  Poliza[]
+
+  @@map("clientes")
+}
+
+// ============================================================
+// PÓLIZAS (opcionales — no todo proceso tiene póliza)
+// ============================================================
+
+enum RamoPoliza {
+  VIDA
+  AUTOS
+  RESPONSABILIDAD_CIVIL
+  CUMPLIMIENTO
+  SOAT
+  TODO_RIESGO
+  INCENDIO
+  TRANSPORTE
+  SALUD
+  OTRO
+}
+
+model Poliza {
+  id             String       @id @default(cuid())
+  organizacionId String
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id])
+  clienteId      String
+  cliente        Cliente      @relation(fields: [clienteId], references: [id])
+  numeroPoliza   String
+  ramo           RamoPoliza?
+  aseguradora    String?
+  vigenciaDesde  DateTime?
+  vigenciaHasta  DateTime?
+  cobertura      Decimal?     @db.Decimal(15, 2)
+  activa         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  procesos ProcesoPoliza[]
+
+  @@map("polizas")
+}
+
+// ============================================================
+// PROCESOS
+// ============================================================
+
+enum TipoProceso {
+  CIVIL
+  CONTENCIOSO_ADMINISTRATIVO
+  ARBITRAL
+  LABORAL
+  PENAL
+  RESPONSABILIDAD_FISCAL
+  PROCEDIMIENTO_ADMINISTRATIVO_SANCIONATORIO
+  PASC // Procedimiento Administrativo Sancionatorio Contractual
+  EJECUTIVO
+  DISCIPLINARIO
+  CONSTITUCIONAL
+  OTRO
+}
+
+enum ClaseProceso {
+  ORDINARIO
+  VERBAL
+  EJECUTIVO
+  NULIDAD_RESTABLECIMIENTO
+  REPARACION_DIRECTA
+  REPARACION_DIRECTA_CONTRACTUAL
+  ARBITRAMENTO
+  OTRO
+}
+
+enum EstadoProceso {
+  ACTIVO
+  SUSPENDIDO
+  TRASLADO_PREVIO
+  TERMINADO
+  ARCHIVADO
+}
+
+enum ResultadoProceso {
+  FAVORABLE
+  DESFAVORABLE
+  PARCIAL
+  CONCILIADO
+  DESISTIDO
+  PENDIENTE
+}
+
+model Proceso {
+  id             String       @id @default(cuid())
+  organizacionId String
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id])
+  clienteId      String
+  cliente        Cliente      @relation(fields: [clienteId], references: [id])
+
+  radicado     String?       @unique
+  tipoProceso  TipoProceso
+  claseProceso ClaseProceso?
+
+  juzgado    String?
+  magistrado String?
+  ciudad     String?
+
+  demandante String?
+  demandado  String?
+
+  cuantia Decimal? @db.Decimal(15, 2)
+
+  estadoActual EstadoProceso    @default(ACTIVO)
+  resultado    ResultadoProceso @default(PENDIENTE)
+
+  fechaApertura DateTime?
+  fechaCierre   DateTime?
+  descripcion   String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  polizas         ProcesoPoliza[]
+  hitos           HitoProcesal[]
+  asignaciones    Asignacion[]
+  registrosTiempo RegistroTiempo[]
+  documentos      Documento[]
+  calculos        CalculoFinanciero[]
+
+  @@map("procesos")
+}
+
+// Relación muchos-a-muchos Proceso ↔ Póliza
+model ProcesoPoliza {
+  procesoId String
+  polizaId  String
+  proceso   Proceso  @relation(fields: [procesoId], references: [id], onDelete: Cascade)
+  poliza    Poliza   @relation(fields: [polizaId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([procesoId, polizaId])
+  @@map("proceso_polizas")
+}
+
+// ============================================================
+// HITOS PROCESALES
+// ============================================================
+
+enum EstadoTermino {
+  VERDE
+  NARANJA
+  ROJO
+}
+
+model HitoProcesal {
+  id               String         @id @default(cuid())
+  procesoId        String
+  proceso          Proceso        @relation(fields: [procesoId], references: [id], onDelete: Cascade)
+  tipoActuacion    String
+  fecha            DateTime
+  descripcion      String?        @db.Text
+  documentoUrl     String?
+  plazoVencimiento DateTime?
+  estadoTermino    EstadoTermino?
+  notificado       Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@map("hitos_procesales")
+}
+
+// ============================================================
+// ASIGNACIONES (Proceso ↔ Abogado)
+// ============================================================
+
+enum RolEnCaso {
+  LIDER
+  APOYO
+  SUPERVISOR
+}
+
+model Asignacion {
+  id              String    @id @default(cuid())
+  procesoId       String
+  proceso         Proceso   @relation(fields: [procesoId], references: [id], onDelete: Cascade)
+  abogadoId       String
+  abogado         Abogado   @relation(fields: [abogadoId], references: [id])
+  rolEnCaso       RolEnCaso
+  fechaAsignacion DateTime  @default(now())
+  activa          Boolean   @default(true)
+
+  @@unique([procesoId, abogadoId])
+  @@map("asignaciones")
+}
+
+// ============================================================
+// REGISTRO DE TIEMPO
+// ============================================================
+
+model RegistroTiempo {
+  id          String   @id @default(cuid())
+  abogadoId   String
+  abogado     Abogado  @relation(fields: [abogadoId], references: [id])
+  procesoId   String
+  proceso     Proceso  @relation(fields: [procesoId], references: [id], onDelete: Cascade)
+  fecha       DateTime
+  horas       Decimal  @db.Decimal(4, 2)
+  descripcion String?  @db.Text
+  facturable  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("registros_tiempo")
+}
+
+// ============================================================
+// DOCUMENTOS
+// ============================================================
+
+model Documento {
+  id          String   @id @default(cuid())
+  procesoId   String
+  proceso     Proceso  @relation(fields: [procesoId], references: [id], onDelete: Cascade)
+  nombre      String
+  tipo        String?
+  url         String
+  tamanio     Int?
+  descripcion String?
+  createdAt   DateTime @default(now())
+
+  @@map("documentos")
+}
+
+// ============================================================
+// CÁLCULOS FINANCIEROS (base para Nivel 7)
+// ============================================================
+
+enum TipoCalculo {
+  INDEXACION_IPC
+  LUCRO_CESANTE
+  PERJUICIOS_MORALES
+  INTERESES_MORATORIOS
+}
+
+model CalculoFinanciero {
+  id         String      @id @default(cuid())
+  procesoId  String
+  proceso    Proceso     @relation(fields: [procesoId], references: [id], onDelete: Cascade)
+  tipo       TipoCalculo
+  parametros Json
+  resultado  Decimal?    @db.Decimal(20, 2)
+  detalle    Json?
+  creadoPor  String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@map("calculos_financieros")
 }
