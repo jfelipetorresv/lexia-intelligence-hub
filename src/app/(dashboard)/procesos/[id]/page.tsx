@@ -12,7 +12,9 @@ import {
   Plus,
   Loader2,
   X,
+  FolderOpen,
 } from "lucide-react";
+import { DocumentosPanel } from "@/components/DocumentosPanel";
 import { EstadoBadge } from "@/components/procesos/estado-badge";
 import { SemaforoBadge } from "@/components/procesos/semaforo-badge";
 import {
@@ -491,6 +493,7 @@ export default function ProcesoDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [activeTab, setActiveTab] = useState<"detalle" | "documentos">("detalle");
 
   useEffect(() => {
     async function fetchData() {
@@ -608,7 +611,38 @@ export default function ProcesoDetailPage() {
         </div>
       </div>
 
-      {/* Body */}
+      {/* Tabs */}
+      <div className="mb-6 flex gap-0 border-b border-[#E8E9EA]">
+        {([
+          { key: "detalle" as const, label: "Detalle", icon: ClipboardList },
+          { key: "documentos" as const, label: "Documentos", icon: FolderOpen },
+        ]).map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+              activeTab === key
+                ? "border-[#008080] text-[#008080]"
+                : "border-transparent text-[#8B8C8E] hover:text-[#060606]"
+            }`}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab: Documentos */}
+      {activeTab === "documentos" && (
+        <DocumentosPanel
+          key={id}
+          procesoId={id}
+          onedriveFolderPath={proceso.onedriveFolderPath}
+        />
+      )}
+
+      {/* Tab: Detalle */}
+      {activeTab === "detalle" && (
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         {/* Left column */}
         <div className="space-y-6">
@@ -760,6 +794,7 @@ export default function ProcesoDetailPage() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

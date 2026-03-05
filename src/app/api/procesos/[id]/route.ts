@@ -124,3 +124,42 @@ export async function PUT(
     );
   }
 }
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const existing = await db.proceso.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Proceso no encontrado" },
+        { status: 404 }
+      );
+    }
+
+    const body = await request.json();
+    const data: Record<string, unknown> = {};
+
+    if ("onedriveFolderPath" in body) {
+      data.onedriveFolderPath = body.onedriveFolderPath;
+    }
+
+    const proceso = await db.proceso.update({
+      where: { id: params.id },
+      data,
+      select: { id: true },
+    });
+
+    return NextResponse.json({ proceso });
+  } catch (error) {
+    console.error("Error patching proceso:", error);
+    return NextResponse.json(
+      { error: "Error al actualizar el proceso" },
+      { status: 500 }
+    );
+  }
+}

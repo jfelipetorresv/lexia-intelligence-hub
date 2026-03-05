@@ -48,6 +48,7 @@ export interface ProcesoDetail {
   demandado: string | null;
   fechaApertura: Date | null;
   descripcion: string | null;
+  onedriveFolderPath: string | null;
   clienteId: string;
   cliente: {
     nombre: string;

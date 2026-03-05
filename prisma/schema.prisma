@@ -294,6 +294,8 @@ model Proceso {
   fechaCierre   DateTime?
   descripcion   String?   @db.Text
 
+  onedriveFolderPath String? @map("onedrive_folder_path")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -301,8 +303,9 @@ model Proceso {
   hitos           HitoProcesal[]
   asignaciones    Asignacion[]
   registrosTiempo RegistroTiempo[]
-  documentos      Documento[]
-  calculos        CalculoFinanciero[]
+  documentos       Documento[]
+  documentosLocal  DocumentoLocal[]
+  calculos         CalculoFinanciero[]
 
   @@map("procesos")
 }
@@ -407,6 +410,24 @@ model Documento {
   createdAt   DateTime @default(now())
 
   @@map("documentos")
+}
+
+// ============================================================
+// DOCUMENTOS LOCALES (Supabase Storage)
+// ============================================================
+
+model DocumentoLocal {
+  id             String   @id @default(cuid())
+  procesoId      String
+  proceso        Proceso  @relation(fields: [procesoId], references: [id], onDelete: Cascade)
+  nombre         String
+  nombreOriginal String?  @map("nombre_original")
+  url            String
+  tamano         Int?
+  tipo           String?
+  creadoEn       DateTime @default(now())
+
+  @@map("documentos_locales")
 }
 
 // ============================================================

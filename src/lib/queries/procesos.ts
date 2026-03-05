@@ -177,6 +177,7 @@ export async function fetchProcesoById(id: string): Promise<ProcesoDetail | null
     demandado: p.demandado,
     fechaApertura: p.fechaApertura,
     descripcion: p.descripcion,
+    onedriveFolderPath: p.onedriveFolderPath,
     clienteId: p.clienteId,
     cliente: p.cliente,
     asignaciones: p.asignaciones.map((a) => ({
