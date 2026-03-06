@@ -9,6 +9,9 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
+    const clienteNombre = formData.get('clienteNombre') as string | null;
+    const calidadProcesal = formData.get('calidadProcesal') as string | null;
+    const contextoAdicional = formData.get('contextoAdicional') as string | null;
 
     if (!file) {
       return NextResponse.json(
@@ -48,7 +51,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const resultado = await extractDemanda(textoExtraido);
+    const resultado = await extractDemanda(textoExtraido, {
+      clienteNombre: clienteNombre || undefined,
+      calidadProcesal: calidadProcesal || undefined,
+      contextoAdicional: contextoAdicional || undefined,
+    });
 
     return NextResponse.json({
       textoExtraido: textoExtraido.substring(0, 500) + '...',

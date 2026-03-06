@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Loader2, Upload, FileText, Sparkles, AlertTriangle,
   RotateCcw, Save, ShieldAlert, CheckCircle, Scale,
-  FolderPlus, Check, X, ArrowLeft,
+  FolderPlus, Check, X, ArrowLeft, Search,
 } from "lucide-react";
 import type { DemandaExtraida } from "@/lib/ai/extractDemanda";
 
@@ -25,7 +25,9 @@ const formatMoneda = (valor: number | null, moneda: string = 'COP'): string => {
   }).format(valor) + ' COP';
 };
 
-type Estado = "idle" | "loading" | "resultado";
+type Estado = "idle" | "configuracion" | "loading" | "resultado";
+
+type ClienteOption = { id: string; nombre: string; nit: string; tipo: string };
 
 function NullText({ children }: { children: string | null | undefined }) {
   if (children) return <span>{children}</span>;
@@ -70,6 +72,7 @@ export default function ExtraerDemandaPage() {
   const searchParams = useSearchParams();
   const yaGuardado = searchParams.get('guardado') === 'true';
   const procesoIdGuardado = searchParams.get('procesoId');
+  const estaVinculado = !!(procesoIdGuardado || yaGuardado);
   const [estado, setEstado] = useState<Estado>("idle");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +90,58 @@ export default function ExtraerDemandaPage() {
   const [tipoAnalisis, setTipoAnalisis] = useState("demanda_principal");
   const [nombreAnalisis, setNombreAnalisis] = useState("");
   const [procesoIdFromAnalisis, setProcesoIdFromAnalisis] = useState<string | null>(null);
+
+  // Configuracion state
+  const [clientes, setClientes] = useState<ClienteOption[]>([]);
+  const [clienteId, setClienteId] = useState('');
+  const [clienteNombre, setClienteNombre] = useState('');
+  const [calidadProcesal, setCalidadProcesal] = useState('');
+  const [contextoAdicional, setContextoAdicional] = useState('');
+
+  // Abogados state
+  const [abogados, setAbogados] = useState<any[]>([]);
+  const [abogadoLiderId, setAbogadoLiderId] = useState("");
+  const [abogadoApoyoId, setAbogadoApoyoId] = useState("");
+
+  // Guardar documento modal state
+  const [modalGuardarDoc, setModalGuardarDoc] = useState(false);
+  const [nombreDocGuardar, setNombreDocGuardar] = useState("Demanda analizada");
+  const [carpetaDocGuardar, setCarpetaDocGuardar] = useState("Documentos generales");
+  const [carpetas, setCarpetas] = useState([
+    'Documentos generales', 'Demandas',
+    'Llamamientos en garantía', 'Arbitrajes',
+  ]);
+  const [creandoCarpeta, setCreandoCarpeta] = useState(false);
+  const [nombreNuevaCarpeta, setNombreNuevaCarpeta] = useState('');
+
+  // Vincular a proceso state
+  const [vincularProceso, setVincularProceso] = useState(false);
+  const [busquedaProceso, setBusquedaProceso] = useState('');
+  const [procesosResultados, setProcesosResultados] = useState<any[]>([]);
+  const [procesoSeleccionado, setProcesoSeleccionado] = useState<any | null>(null);
+  const [buscandoProcesos, setBuscandoProcesos] = useState(false);
+  const [guardandoDoc, setGuardandoDoc] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load clientes when entering configuracion
+  useEffect(() => {
+    if (estado === 'configuracion' && clientes.length === 0) {
+      fetch('/api/clientes')
+        .then(r => r.json())
+        .then(data => setClientes(Array.isArray(data) ? data : []))
+        .catch(() => setClientes([]));
+    }
+  }, [estado]);
+
+  // Load abogados when modal opens
+  useEffect(() => {
+    if (mostrarModalGuardar) {
+      fetch("/api/abogados")
+        .then((r) => r.json())
+        .then((data) => setAbogados(Array.isArray(data) ? data : data.abogados || []))
+        .catch(() => setAbogados([]));
+    }
+  }, [mostrarModalGuardar]);
 
   // Load saved analysis from query param
   useEffect(() => {
@@ -128,6 +183,13 @@ export default function ExtraerDemandaPage() {
     try {
       const form = new FormData();
       form.append("file", file);
+      const nombreCliente = clienteId
+        ? clientes.find(c => c.id === clienteId)?.nombre || clienteNombre
+        : clienteNombre;
+      if (nombreCliente) form.append("clienteNombre", nombreCliente);
+      if (clienteId) form.append("clienteId", clienteId);
+      if (calidadProcesal) form.append("calidadProcesal", calidadProcesal);
+      if (contextoAdicional) form.append("contextoAdicional", contextoAdicional);
       const res = await fetch("/api/ai/extract-demanda", { method: "POST", body: form });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
@@ -150,6 +212,10 @@ export default function ExtraerDemandaPage() {
     setTextoExtraido("");
     setError(null);
     setPasosCompletados(new Set());
+    setClienteId('');
+    setClienteNombre('');
+    setCalidadProcesal('');
+    setContextoAdicional('');
   }
 
   function showToast(msg: string) {
@@ -178,6 +244,8 @@ export default function ExtraerDemandaPage() {
           proximosPasos: resultado.estrategiaDefensa?.proximosPasos ?? [],
           tipoAnalisis,
           nombreAnalisis: nombreAnalisis || undefined,
+          abogadoLiderId: abogadoLiderId || undefined,
+          abogadoApoyoId: abogadoApoyoId || undefined,
         }),
       });
       if (!res.ok) {
@@ -192,6 +260,122 @@ export default function ExtraerDemandaPage() {
     } finally {
       setGuardando(false);
     }
+  }
+
+  // ─── CONFIGURACION ───
+  if (estado === "configuracion") {
+    return (
+      <div className="mx-auto max-w-2xl space-y-6">
+        {/* Sección 1: Documento seleccionado */}
+        <div className="flex items-center justify-between rounded-sm border border-[#E8E9EA] bg-white px-4 py-3">
+          <div className="flex items-center gap-3">
+            <FileText className="h-5 w-5 text-[#008080]" />
+            <div>
+              <p className="text-sm font-medium text-[#060606]">{file?.name}</p>
+              <p className="text-xs text-[#8B8C8E]">{file ? (file.size / 1024 / 1024).toFixed(2) + ' MB' : ''}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setEstado("idle")}
+            className="text-xs text-[#8B8C8E] hover:text-[#060606] transition-colors"
+          >
+            Cambiar
+          </button>
+        </div>
+
+        {/* Sección 2: Configurar análisis */}
+        <div className="rounded-sm border border-[#E8E9EA] bg-white p-6 space-y-5">
+          <div>
+            <h2 className="text-base font-semibold text-[#060606]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+              Configurar an&aacute;lisis
+            </h2>
+            <p className="mt-1 text-sm text-[#8B8C8E]">
+              Esta informaci&oacute;n permite al agente enfocar la estrategia defensiva
+            </p>
+          </div>
+
+          {/* Campo 1: Cliente representado */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-[#060606]">Cliente representado</label>
+            <select
+              value={clienteId}
+              onChange={e => {
+                setClienteId(e.target.value);
+                if (e.target.value) {
+                  const c = clientes.find(cl => cl.id === e.target.value);
+                  if (c) setClienteNombre(c.nombre);
+                }
+              }}
+              className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+            >
+              <option value="">Selecciona el cliente...</option>
+              {clientes.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre} ({c.tipo === 'ASEGURADORA' ? 'Aseguradora' : c.tipo === 'EMPRESA' ? 'Empresa' : 'Persona'})
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={clienteId ? '' : clienteNombre}
+              onChange={e => { setClienteNombre(e.target.value); setClienteId(''); }}
+              placeholder="ej. Seguros del Estado S.A."
+              className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] placeholder:text-[#8B8C8E] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+            />
+            <p className="text-xs text-[#8B8C8E]">Nombre espec&iacute;fico si no est&aacute; en la lista</p>
+          </div>
+
+          {/* Campo 2: Calidad procesal */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-[#060606]">Calidad procesal del cliente</label>
+            <select
+              value={calidadProcesal}
+              onChange={e => setCalidadProcesal(e.target.value)}
+              className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+            >
+              <option value="">Selecciona la calidad procesal...</option>
+              <option value="demandado_directo">Demandado directo</option>
+              <option value="llamado_garantia">Llamado en garant&iacute;a</option>
+              <option value="litisconsorcio">Litisconsorte necesario</option>
+              <option value="tercero_interviniente">Tercero interviniente</option>
+              <option value="reconvencionado">Demandado en reconvenci&oacute;n</option>
+            </select>
+          </div>
+
+          {/* Campo 3: Contexto adicional */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-[#060606]">Contexto adicional <span className="font-normal text-[#8B8C8E]">(opcional)</span></label>
+            <textarea
+              value={contextoAdicional}
+              onChange={e => {
+                if (e.target.value.length <= 500) setContextoAdicional(e.target.value);
+              }}
+              placeholder="Describe brevemente el contexto del caso si tienes informaci&oacute;n adicional que el documento no refleja (ej. 'el contrato ya fue liquidado', 'hay una conciliaci&oacute;n previa fallida', 'el cliente es coasegurador al 50%')"
+              rows={3}
+              className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] placeholder:text-[#8B8C8E] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080] resize-none"
+            />
+            <p className="text-right text-xs text-[#8B8C8E]">{contextoAdicional.length}/500</p>
+          </div>
+        </div>
+
+        {/* Sección 3: Botones */}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setEstado("idle")}
+            className="text-sm text-[#8B8C8E] hover:text-[#060606] transition-colors"
+          >
+            &larr; Cambiar documento
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!calidadProcesal}
+            className="flex items-center gap-2 rounded-sm bg-[#008080] px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#006666] disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Analizar demanda &rarr;
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // ─── LOADING ───
@@ -221,6 +405,13 @@ export default function ExtraerDemandaPage() {
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Volver al expediente
           </button>
+        )}
+
+        {/* Guardado badge */}
+        {yaGuardado && (
+          <div className="mb-4 flex items-center gap-2 rounded-sm border border-green-200 bg-green-50 px-4 py-2 text-sm font-medium text-green-700">
+            <Check className="h-4 w-4" /> An&aacute;lisis guardado exitosamente
+          </div>
         )}
 
         {/* Header */}
@@ -614,15 +805,21 @@ export default function ExtraerDemandaPage() {
             >
               <RotateCcw className="h-3.5 w-3.5" /> Analizar otro documento
             </button>
-            {yaGuardado && procesoIdGuardado ? (
-              <div className="flex items-center gap-2 rounded-sm border border-green-200 bg-green-50 px-4 py-2 text-sm font-medium text-green-700">
-                <Check className="h-4 w-4" /> An&aacute;lisis guardado —{" "}
-                <a href={`/procesos/${procesoIdGuardado}`} className="text-[#008080] underline hover:text-[#006666]">
-                  Ver expediente &rarr;
-                </a>
-              </div>
+            {(estaVinculado || procesoIdFromAnalisis) ? (
+              <button
+                onClick={() => router.push(`/procesos/${procesoIdGuardado || procesoIdFromAnalisis}?tab=analisis`)}
+                className="flex items-center gap-1.5 rounded-md bg-[#008080] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#006666]"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" /> Volver al expediente
+              </button>
             ) : (
               <>
+                <button
+                  onClick={() => setModalGuardarDoc(true)}
+                  className="flex items-center gap-1.5 rounded-sm border border-[#374151] px-4 py-2 text-sm font-medium text-[#374151] bg-transparent transition-colors hover:bg-[#FAFBFC]"
+                >
+                  <Save className="h-3.5 w-3.5" /> Guardar documento
+                </button>
                 <button
                   onClick={() => setMostrarModalGuardar(true)}
                   className="flex items-center gap-1.5 rounded-sm bg-[#008080] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#006666]"
@@ -709,6 +906,38 @@ export default function ExtraerDemandaPage() {
                     />
                   </div>
 
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#8B8C8E]">
+                      Abogado l&iacute;der
+                    </label>
+                    <select
+                      value={abogadoLiderId}
+                      onChange={(e) => setAbogadoLiderId(e.target.value)}
+                      className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+                    >
+                      <option value="">Sin asignar</option>
+                      {abogados.map((a: any) => (
+                        <option key={a.id} value={a.id}>{a.nombre} — {a.rol}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#8B8C8E]">
+                      Abogado de apoyo (opcional)
+                    </label>
+                    <select
+                      value={abogadoApoyoId}
+                      onChange={(e) => setAbogadoApoyoId(e.target.value)}
+                      className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+                    >
+                      <option value="">Sin asignar</option>
+                      {abogados.map((a: any) => (
+                        <option key={a.id} value={a.id}>{a.nombre} — {a.rol}</option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="flex gap-2">
                     <button
                       onClick={() => setMostrarModalGuardar(false)}
@@ -729,6 +958,265 @@ export default function ExtraerDemandaPage() {
                     </button>
                   </div>
                 </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── MODAL GUARDAR DOCUMENTO ── */}
+        {modalGuardarDoc && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="w-full max-w-md rounded-sm border border-[#E8E9EA] bg-white p-6 shadow-xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-base font-semibold text-[#060606]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+                  Guardar documento del an&aacute;lisis
+                </h2>
+                <button onClick={() => setModalGuardarDoc(false)} className="text-[#8B8C8E] hover:text-[#060606]">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Nombre del archivo */}
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#8B8C8E]">
+                    Nombre del archivo
+                  </label>
+                  <input
+                    type="text"
+                    value={nombreDocGuardar}
+                    onChange={(e) => setNombreDocGuardar(e.target.value)}
+                    placeholder="Demanda analizada"
+                    className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] placeholder:text-[#8B8C8E] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+                  />
+                </div>
+
+                {/* Vincular a expediente */}
+                <div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={vincularProceso}
+                      onChange={(e) => {
+                        setVincularProceso(e.target.checked);
+                        if (!e.target.checked) {
+                          setProcesoSeleccionado(null);
+                          setBusquedaProceso('');
+                          setProcesosResultados([]);
+                        }
+                      }}
+                      className="h-4 w-4 rounded border-[#E8E9EA] text-[#008080] focus:ring-[#008080]"
+                    />
+                    <span className="text-sm font-medium text-[#060606]">Vincular a un expediente existente</span>
+                  </label>
+
+                  {vincularProceso && (
+                    <div className="mt-2">
+                      {procesoSeleccionado ? (
+                        <div className="flex items-center justify-between rounded-lg border border-[#008080] bg-[#f0fdf9] px-3 py-2.5">
+                          <span className="text-sm text-[#006666]">
+                            <CheckCircle className="mr-1.5 inline h-3.5 w-3.5" />
+                            <span className="font-semibold">{procesoSeleccionado.radicado}</span>
+                            {' — '}
+                            {procesoSeleccionado.demandante || 'N/A'} vs {procesoSeleccionado.demandado || 'N/A'}
+                          </span>
+                          <button
+                            onClick={() => { setProcesoSeleccionado(null); setBusquedaProceso(''); setProcesosResultados([]); }}
+                            className="ml-2 text-[#8B8C8E] hover:text-[#060606]"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden', margin: '0 -4px' }}>
+                          {/* Search input */}
+                          <div className="relative flex items-center" style={{ borderBottom: '1px solid #e5e7eb' }}>
+                            <Search className="absolute left-3 h-4 w-4 text-[#9ca3af]" />
+                            <input
+                              type="text"
+                              value={busquedaProceso}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setBusquedaProceso(val);
+                                if (debounceRef.current) clearTimeout(debounceRef.current);
+                                if (val.length < 2) { setProcesosResultados([]); setBuscandoProcesos(false); return; }
+                                setBuscandoProcesos(true);
+                                debounceRef.current = setTimeout(() => {
+                                  fetch(`/api/procesos?busqueda=${encodeURIComponent(val)}`)
+                                    .then(r => r.json())
+                                    .then(data => setProcesosResultados(data.procesos?.slice(0, 6) || []))
+                                    .catch(() => setProcesosResultados([]))
+                                    .finally(() => setBuscandoProcesos(false));
+                                }, 350);
+                              }}
+                              placeholder="Buscar proceso..."
+                              className="w-full bg-white pl-9 pr-9 text-sm text-[#111827] placeholder:text-[#9ca3af] focus:outline-none"
+                              style={{ border: 'none', fontSize: '14px', padding: '12px 14px', paddingLeft: '36px', paddingRight: '36px' }}
+                            />
+                            {buscandoProcesos && (
+                              <Loader2 className="absolute right-3 h-4 w-4 animate-spin text-[#9ca3af]" />
+                            )}
+                            {!buscandoProcesos && busquedaProceso && (
+                              <button
+                                onClick={() => { setBusquedaProceso(''); setProcesosResultados([]); }}
+                                className="absolute right-3 text-[#9ca3af] hover:text-[#060606]"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                          {/* Results list */}
+                          <div style={{ maxHeight: '260px', overflowY: 'auto' }}>
+                            {busquedaProceso.length < 2 ? (
+                              <div className="flex flex-col items-center justify-center gap-1.5 py-8">
+                                <Search className="h-5 w-5 text-[#9ca3af]" />
+                                <p className="text-xs text-[#9ca3af]">Escribe para buscar por radicado o partes</p>
+                              </div>
+                            ) : buscandoProcesos ? (
+                              <div className="flex items-center justify-center py-8">
+                                <Loader2 className="h-5 w-5 animate-spin text-[#008080]" />
+                              </div>
+                            ) : procesosResultados.length === 0 ? (
+                              <p className="py-8 text-center text-xs text-[#9ca3af]">
+                                No se encontraron procesos con ese t&eacute;rmino
+                              </p>
+                            ) : (
+                              procesosResultados.map((p: any) => (
+                                <button
+                                  key={p.id}
+                                  onClick={() => {
+                                    setProcesoSeleccionado(p);
+                                    setBusquedaProceso('');
+                                    setProcesosResultados([]);
+                                  }}
+                                  className="block w-full text-left transition-colors hover:bg-[#f0fdf9]"
+                                  style={{ padding: '10px 14px', borderBottom: '1px solid #f3f4f6', cursor: 'pointer' }}
+                                >
+                                  <span className="block text-sm font-semibold text-[#111827]">{p.radicado}</span>
+                                  <span className="block text-[#6b7280]" style={{ fontSize: '13px' }}>
+                                    {p.demandante || 'N/A'} vs. {p.demandado || 'N/A'}
+                                  </span>
+                                  <span className="block text-[#9ca3af]" style={{ fontSize: '12px' }}>
+                                    {p.tipoProceso || 'Sin tipo'}{p.ciudad ? ` — ${p.ciudad}` : ''}
+                                  </span>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Carpeta destino */}
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#8B8C8E]">
+                    Carpeta destino
+                  </label>
+                  {creandoCarpeta ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={nombreNuevaCarpeta}
+                        onChange={(e) => setNombreNuevaCarpeta(e.target.value)}
+                        placeholder="Nombre de la nueva carpeta"
+                        className="flex-1 rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] placeholder:text-[#8B8C8E] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && nombreNuevaCarpeta.trim()) {
+                            const nombre = nombreNuevaCarpeta.trim();
+                            if (!carpetas.includes(nombre)) setCarpetas(prev => [...prev, nombre]);
+                            setCarpetaDocGuardar(nombre);
+                            setNombreNuevaCarpeta('');
+                            setCreandoCarpeta(false);
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          const nombre = nombreNuevaCarpeta.trim();
+                          if (!nombre) return;
+                          if (!carpetas.includes(nombre)) setCarpetas(prev => [...prev, nombre]);
+                          setCarpetaDocGuardar(nombre);
+                          setNombreNuevaCarpeta('');
+                          setCreandoCarpeta(false);
+                        }}
+                        className="rounded-sm bg-[#008080] px-3 py-2 text-sm font-medium text-white hover:bg-[#006666]"
+                      >
+                        Crear
+                      </button>
+                      <button
+                        onClick={() => { setCreandoCarpeta(false); setNombreNuevaCarpeta(''); }}
+                        className="rounded-sm border border-[#E8E9EA] px-3 py-2 text-sm text-[#8B8C8E] hover:text-[#060606]"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <select
+                        value={carpetaDocGuardar}
+                        onChange={(e) => setCarpetaDocGuardar(e.target.value)}
+                        className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+                      >
+                        {carpetas.map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => setCreandoCarpeta(true)}
+                        className="mt-1.5 text-xs font-medium text-[#008080] hover:text-[#006666]"
+                      >
+                        + Nueva carpeta
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {/* Botones */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setModalGuardarDoc(false)}
+                    className="flex-1 rounded-sm border border-[#E8E9EA] bg-white px-4 py-2.5 text-sm font-medium text-[#060606] transition-colors hover:bg-[#FAFBFC]"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    disabled={guardandoDoc}
+                    onClick={async () => {
+                      if (procesoSeleccionado) {
+                        setGuardandoDoc(true);
+                        try {
+                          const res = await fetch('/api/documentos', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              procesoId: procesoSeleccionado.id,
+                              nombre: nombreDocGuardar,
+                              url: '/analisis-ia/' + Date.now(),
+                              descripcion: 'Guardado desde an\u00e1lisis IA — carpeta: ' + carpetaDocGuardar,
+                            }),
+                          });
+                          if (!res.ok) throw new Error('Error al guardar');
+                          setModalGuardarDoc(false);
+                          showToast(`Documento guardado y vinculado a ${procesoSeleccionado.radicado}`);
+                        } catch {
+                          showToast('Error al guardar el documento');
+                        } finally {
+                          setGuardandoDoc(false);
+                        }
+                      } else {
+                        setModalGuardarDoc(false);
+                        showToast(`Documento guardado en ${carpetaDocGuardar}`);
+                      }
+                    }}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-sm bg-[#008080] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#006666] disabled:opacity-50"
+                  >
+                    {guardandoDoc ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Guardar
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -805,7 +1293,7 @@ export default function ExtraerDemandaPage() {
       )}
 
       <button
-        onClick={handleSubmit}
+        onClick={() => { setError(null); setEstado("configuracion"); }}
         disabled={!file}
         className="mt-6 flex w-full items-center justify-center gap-2 rounded-sm bg-[#008080] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#006666] disabled:opacity-40 disabled:cursor-not-allowed"
       >

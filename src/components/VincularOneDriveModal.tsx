@@ -58,7 +58,7 @@ export function VincularOneDriveModal({
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const [filtroBusqueda, setFiltroBusqueda] = useState("");
   const [filter, setFilter] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -66,8 +66,14 @@ export function VincularOneDriveModal({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentPath = pathSegments.join("/");
-  // When jurisdiction chip is active, disable text search (path info not available from Graph search)
-  const isTextSearching = search.length >= 3 && !jurisdiction;
+  // Text search: >= 3 chars without jurisdiction triggers global Graph search
+  // With jurisdiction or 2+ chars: local filter on current folder list
+  const isTextSearching = filtroBusqueda.length >= 3 && !jurisdiction;
+
+  // Local filter — always available for browsing mode
+  const carpetasFiltradas = filtroBusqueda.length >= 2 && !isTextSearching
+    ? folders.filter(f => f.name.toLowerCase().includes(filtroBusqueda.toLowerCase()))
+    : folders;
 
   const filteredResults = searchResults;
 
@@ -79,7 +85,7 @@ export function VincularOneDriveModal({
   useEffect(() => {
     if (!open) return;
     setPathSegments([]);
-    setSearch("");
+    setFiltroBusqueda("");
     setFilter("");
     setJurisdiction("");
     setSearchResults([]);
@@ -114,7 +120,7 @@ export function VincularOneDriveModal({
     setSearching(true);
     debounceRef.current = setTimeout(async () => {
       try {
-        const params = new URLSearchParams({ q: search });
+        const params = new URLSearchParams({ q: filtroBusqueda });
         if (filter) params.set("basePath", filter);
         const res = await fetch(`/api/onedrive/search?${params}`);
         if (!res.ok) throw new Error();
@@ -130,7 +136,7 @@ export function VincularOneDriveModal({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [search, filter]);
+  }, [filtroBusqueda, filter]);
 
   async function loadFolders() {
     setLoading(true);
@@ -151,11 +157,12 @@ export function VincularOneDriveModal({
   }
 
   function navigateInto(folderName: string) {
-    setSearch("");
+    setFiltroBusqueda("");
     setPathSegments((prev) => [...prev, folderName]);
   }
 
   function navigateBack() {
+    setFiltroBusqueda("");
     setPathSegments((prev) => prev.slice(0, -1));
   }
 
@@ -186,7 +193,7 @@ export function VincularOneDriveModal({
   function handleFilterChange(key: string) {
     setFilter(key);
     setJurisdiction("");
-    setSearch("");
+    setFiltroBusqueda("");
   }
 
   function formatSearchPath(path: string) {
@@ -235,16 +242,15 @@ export function VincularOneDriveModal({
           </div>
         )}
 
-        {/* Search input */}
+        {/* Search input — always visible */}
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8B8C8E]" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8B8C8E]" />
           <input
             type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={jurisdiction ? "Búsqueda desactivada — navega manualmente" : "Buscar carpeta..."}
-            disabled={!!jurisdiction}
-            className={`w-full rounded-sm border border-[#E8E9EA] py-1.5 pl-8 pr-3 text-sm text-[#060606] placeholder:text-[#8B8C8E] focus:border-[#008080] focus:outline-none ${jurisdiction ? "opacity-50 cursor-not-allowed" : ""}`}
+            value={filtroBusqueda}
+            onChange={(e) => setFiltroBusqueda(e.target.value)}
+            placeholder="Buscar carpeta por nombre..."
+            className="w-full rounded-md border border-[#E8E9EA] py-2 pl-9 pr-3 text-sm text-[#060606] placeholder:text-[#8B8C8E] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
           />
         </div>
 
@@ -272,7 +278,7 @@ export function VincularOneDriveModal({
               {JURISDICTION_CHIPS.map((chip) => (
                 <button
                   key={chip.key}
-                  onClick={() => { setJurisdiction(chip.key); setSearch(""); }}
+                  onClick={() => { setJurisdiction(chip.key); setFiltroBusqueda(""); }}
                   className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
                     jurisdiction === chip.key
                       ? "bg-[#008080] text-white"
@@ -285,7 +291,7 @@ export function VincularOneDriveModal({
             </div>
             {jurisdiction && (
               <p className="text-[11px] text-amber-600">
-                Navega manualmente para filtrar por jurisdicci&oacute;n. La b&uacute;squeda por texto est&aacute; desactivada.
+                Filtrando por jurisdicción. Usa el buscador arriba para filtrar por nombre.
               </p>
             )}
           </div>
@@ -349,6 +355,21 @@ export function VincularOneDriveModal({
               <p className="py-8 text-center text-sm text-[#8B8C8E]">
                 No hay subcarpetas
               </p>
+            ) : carpetasFiltradas.length === 0 ? (
+              <div>
+                {pathSegments.length > 0 && (
+                  <button
+                    onClick={navigateBack}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-[#8B8C8E] transition-colors hover:bg-[#FAFBFC]"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Volver
+                  </button>
+                )}
+                <p className="py-8 text-center text-sm text-[#8B8C8E]">
+                  No se encontraron carpetas con ese nombre
+                </p>
+              </div>
             ) : (
               <ul>
                 {pathSegments.length > 0 && (
@@ -362,7 +383,7 @@ export function VincularOneDriveModal({
                     </button>
                   </li>
                 )}
-                {folders.map((folder) => (
+                {carpetasFiltradas.map((folder) => (
                   <li key={folder.name}>
                     <button
                       onClick={() => navigateInto(folder.name)}

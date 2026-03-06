@@ -51,12 +51,38 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "procesoId requerido" }, { status: 400 });
     }
 
-    const docs = await db.documentoLocal.findMany({
+    // Local documents from Supabase Storage
+    const docsLocal = await db.documentoLocal.findMany({
       where: { procesoId },
       orderBy: { creadoEn: "desc" },
     });
 
-    return NextResponse.json({ documentos: docs });
+    // Also include documents from the Documento table (e.g. IA-generated)
+    const docsGenerales = await db.documento.findMany({
+      where: { procesoId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // Normalize Documento records to match DocumentoLocal shape
+    const docsGeneralesNorm = docsGenerales.map((d: any) => ({
+      id: d.id,
+      procesoId: d.procesoId,
+      nombre: d.nombre,
+      nombreOriginal: d.nombre,
+      url: d.url,
+      tamano: d.tamanio ?? 0,
+      tipo: d.tipo ?? null,
+      creadoEn: d.createdAt,
+      fuente: 'documento', // flag to distinguish origin
+      descripcion: d.descripcion ?? null,
+    }));
+
+    const documentos = [
+      ...docsLocal.map((d: any) => ({ ...d, fuente: 'local' })),
+      ...docsGeneralesNorm,
+    ];
+
+    return NextResponse.json({ documentos });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error("Error listando documentos locales:", msg);

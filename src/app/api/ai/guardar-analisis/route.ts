@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
@@ -16,11 +17,10 @@ export async function POST(request: NextRequest) {
     let targetProcesoId = procesoId;
 
     if (crearProceso) {
-      // Find the first org and client to use as defaults
       const org = await db.organizacion.findFirst({ where: { activa: true } });
       if (!org) {
         return NextResponse.json(
-          { error: 'No se encontró una organización activa' },
+          { error: 'No se encontro una organizacion activa' },
           { status: 400 }
         );
       }
@@ -30,29 +30,47 @@ export async function POST(request: NextRequest) {
       });
       if (!cliente) {
         return NextResponse.json(
-          { error: 'No se encontró un cliente activo' },
+          { error: 'No se encontro un cliente activo' },
           { status: 400 }
         );
       }
 
       const radicado = resultado?.radicado || `TEMP-${Date.now()}`;
-
-      // Check for duplicate radicado
       const existing = await db.proceso.findUnique({ where: { radicado } });
 
-      // Map especialidad to TipoProceso enum
-      const especialidadMap: Record<string, string> = {
-        civil: 'CIVIL',
-        administrativo: 'CONTENCIOSO_ADMINISTRATIVO',
-        laboral: 'LABORAL',
-        penal: 'PENAL',
-        arbitral: 'ARBITRAL',
-        ejecutivo: 'EJECUTIVO',
-        disciplinario: 'DISCIPLINARIO',
-        constitucional: 'CONSTITUCIONAL',
+      // Infer tipoProceso from AI result using includes() for resilience
+      const inferirTipoProceso = (): string => {
+        const j = (
+          resultado?.tipoProceso ||
+          resultado?.jurisdiccionJuzgado?.jurisdiccion ||
+          resultado?.jurisdiccionJuzgado?.especialidad ||
+          ''
+        ).toLowerCase().trim();
+        if (j.includes('arbitr')) return 'ARBITRAL';
+        if (j.includes('contencioso') || j.includes('administrativ')) return 'CONTENCIOSO_ADMINISTRATIVO';
+        if (j.includes('penal')) return 'PENAL';
+        if (j.includes('laboral')) return 'LABORAL';
+        if (j.includes('ejecutiv')) return 'EJECUTIVO';
+        if (j.includes('disciplin')) return 'DISCIPLINARIO';
+        if (j.includes('constitucional') || j.includes('tutela')) return 'CONSTITUCIONAL';
+        if (j.includes('fiscal')) return 'RESPONSABILIDAD_FISCAL';
+        if (j.includes('sancionatori')) return 'PROCEDIMIENTO_ADMINISTRATIVO_SANCIONATORIO';
+        if (j.includes('civil') || j.includes('comerci')) return 'CIVIL';
+        return 'CIVIL';
       };
-      const esp = (resultado?.jurisdiccionJuzgado?.especialidad || '').toLowerCase();
-      const tipoProceso = especialidadMap[esp] || 'CIVIL';
+      const tipoProceso = inferirTipoProceso();
+
+      // Extract values with safe fallbacks
+      const demandanteVal = resultado?.partes?.demandantes?.[0]?.nombre ?? null;
+      const demandadoVal = resultado?.partes?.demandados?.[0]?.nombre ?? null;
+      const cuantiaRaw = resultado?.cuantiaGlobal?.valor;
+      const cuantiaVal = cuantiaRaw != null && !isNaN(Number(cuantiaRaw))
+        ? new Prisma.Decimal(cuantiaRaw)
+        : null;
+
+      console.log('[guardar-analisis] Creando proceso:', {
+        tipoProceso, demandanteVal, demandadoVal, cuantiaVal: cuantiaVal?.toString(), radicado,
+      });
 
       const nuevoProceso = await db.proceso.create({
         data: {
@@ -64,10 +82,10 @@ export async function POST(request: NextRequest) {
           fechaApertura: new Date(),
           juzgado: resultado?.jurisdiccionJuzgado?.juzgado || 'Por definir',
           ciudad: resultado?.jurisdiccionJuzgado?.ciudad || undefined,
-          demandante: resultado?.partes?.demandantes?.[0]?.nombre || undefined,
-          demandado: resultado?.partes?.demandados?.[0]?.nombre || undefined,
-          cuantia: resultado?.cuantiaGlobal?.valor || undefined,
-          descripcion: 'Proceso creado desde análisis IA',
+          demandante: demandanteVal,
+          demandado: demandadoVal,
+          cuantia: cuantiaVal,
+          descripcion: 'Proceso creado desde analisis IA',
         },
       });
 
@@ -93,29 +111,37 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Create Documento references
-    const nombreDoc = nombreAnalisis || 'Documento analizado';
-    await db.documento.create({
-      data: {
-        procesoId: targetProcesoId,
-        nombre: `Demanda - ${nombreDoc}`,
-        tipo: 'demanda',
-        url: `/api/ai/analisis/${analisis.id}`,
-        descripcion: 'Cargado automaticamente desde analisis IA',
-      },
-    });
+    // Create Documento references — wrapped in try/catch so analysis save is not blocked
+    const nombreDoc = nombreAnalisis || 'Analisis IA';
+    try {
+      await db.documento.create({
+        data: {
+          procesoId: targetProcesoId,
+          nombre: `Demanda - ${nombreDoc}`,
+          tipo: 'demanda',
+          url: `/api/ai/analisis/${analisis.id}`,
+          descripcion: 'Vinculado automaticamente desde analisis IA',
+        },
+      });
+    } catch (e) {
+      console.error('Error creando documento demanda:', e);
+    }
 
-    await db.documento.create({
-      data: {
-        procesoId: targetProcesoId,
-        nombre: `Ficha Tecnica IA - ${nombreDoc}`,
-        tipo: 'analisis_ia',
-        url: `/ai/extraer?analisisId=${analisis.id}`,
-        descripcion: 'Ficha tecnica generada automaticamente por analisis IA',
-      },
-    });
+    try {
+      await db.documento.create({
+        data: {
+          procesoId: targetProcesoId,
+          nombre: `Ficha Tecnica IA - ${nombreDoc}`,
+          tipo: 'analisis_ia',
+          url: `/ai/extraer?analisisId=${analisis.id}`,
+          descripcion: 'Ficha tecnica generada automaticamente por analisis IA',
+        },
+      });
+    } catch (e) {
+      console.error('Error creando documento ficha tecnica:', e);
+    }
 
-    // Create TareaIA for each próximo paso
+    // Create TareaIA for each proximo paso
     const pasos: string[] = proximosPasos ?? [];
     if (pasos.length > 0) {
       await db.tareaIA.createMany({
@@ -129,6 +155,34 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Create Asignacion records for abogado líder and apoyo
+    if (body.abogadoLiderId) {
+      try {
+        await db.asignacion.create({
+          data: {
+            procesoId: targetProcesoId,
+            abogadoId: body.abogadoLiderId,
+            rolEnCaso: 'LIDER',
+          },
+        });
+      } catch (e: any) {
+        console.error('[guardar-analisis] Error asignacion líder:', e.message);
+      }
+    }
+    if (body.abogadoApoyoId) {
+      try {
+        await db.asignacion.create({
+          data: {
+            procesoId: targetProcesoId,
+            abogadoId: body.abogadoApoyoId,
+            rolEnCaso: 'APOYO',
+          },
+        });
+      } catch (e: any) {
+        console.error('[guardar-analisis] Error asignacion apoyo:', e.message);
+      }
+    }
+
     return NextResponse.json({
       procesoId: targetProcesoId,
       analisisId: analisis.id,
@@ -137,7 +191,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('[guardar-analisis] Error:', error);
     return NextResponse.json(
-      { error: error.message || 'Error al guardar el análisis' },
+      { error: error.message || 'Error al guardar el analisis' },
       { status: 500 }
     );
   }
