@@ -13,7 +13,9 @@
       "Bash(npx next:*)",
       "Bash(taskkill:*)",
       "Bash(npx tsc:*)",
-      "Bash(netstat:*)"
+      "Bash(netstat:*)",
+      "Bash(npm list:*)",
+      "Bash(npm:*)"
     ]
   }
 }

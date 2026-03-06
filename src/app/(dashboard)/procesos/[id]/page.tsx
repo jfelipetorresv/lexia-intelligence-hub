@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -13,6 +13,9 @@ import {
   Loader2,
   X,
   FolderOpen,
+  Sparkles,
+  Check,
+  ChevronDown,
 } from "lucide-react";
 import { DocumentosPanel } from "@/components/DocumentosPanel";
 import { EstadoBadge } from "@/components/procesos/estado-badge";
@@ -484,16 +487,308 @@ function HitosProcesalesSection({ procesoId }: { procesoId: string }) {
   );
 }
 
+interface TareaIA {
+  id: string;
+  titulo: string;
+  completada: boolean;
+  orden: number;
+}
+
+interface AnalisisItem {
+  id: string;
+  resultado: any;
+  tipo: string;
+  nombre: string | null;
+  creadoEn: string;
+}
+
+interface AnalisisMultiData {
+  analisis: AnalisisItem[];
+  tareasPorAnalisis: Record<string, TareaIA[]>;
+}
+
+const TIPO_ANALISIS_LABELS: Record<string, string> = {
+  demanda_principal: "Demanda principal",
+  llamamiento_garantia: "Llamamiento en garant\u00eda",
+  demanda_reconvencion: "Demanda de reconvenci\u00f3n",
+  otro: "Otro documento",
+};
+
+function AnalisisIAPanel({
+  analisis,
+  tareas,
+  onToggleTarea,
+}: {
+  analisis: AnalisisItem;
+  tareas: TareaIA[];
+  onToggleTarea: (tarea: TareaIA) => void;
+}) {
+  const [expandido, setExpandido] = useState(false);
+  const resultado = analisis.resultado as any;
+  const totalTareas = tareas.length;
+  const tareasCompletadas = tareas.filter(t => t.completada).length;
+  const todasCompletadas = totalTareas > 0 && tareasCompletadas === totalTareas;
+
+  return (
+    <div className="space-y-6">
+      {/* TAREAS */}
+      {totalTareas > 0 && (
+        <div className="rounded-sm border border-[#E8E9EA] bg-white p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xs font-medium uppercase tracking-widest text-[#060606]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+              Pr&oacute;ximos pasos del an&aacute;lisis
+            </h2>
+            <span className={`text-xs ${todasCompletadas ? "font-semibold text-[#008080]" : "text-[#6b7280]"}`}>
+              {todasCompletadas ? "Todos los pasos completados" : `${tareasCompletadas} de ${totalTareas} completados`}
+            </span>
+          </div>
+
+          {todasCompletadas && (
+            <div className="mb-4 rounded-sm border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-700">
+              Todos los pasos completados
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {tareas.map(tarea => (
+              <div
+                key={tarea.id}
+                onClick={() => onToggleTarea(tarea)}
+                className="flex cursor-pointer items-start gap-3 rounded-lg border border-[#e5e7eb] bg-white py-3 px-4 transition-colors hover:bg-[#f0fdf9]"
+              >
+                <div className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 transition-all duration-200 ${
+                  tarea.completada ? "border-[#008080] bg-[#008080]" : "border-gray-300 bg-transparent"
+                }`}>
+                  {tarea.completada && <Check className="h-3 w-3 text-white" />}
+                </div>
+                <span className={`text-sm transition-all duration-200 ${
+                  tarea.completada ? "text-[#8B8C8E] line-through" : "text-[#008080]"
+                }`}>{tarea.titulo}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* RESUMEN COLAPSABLE */}
+      <div className="rounded-sm border border-[#E8E9EA] bg-white">
+        <button
+          onClick={() => setExpandido(!expandido)}
+          className="flex w-full items-center justify-between bg-[#f9fafb] px-6 py-4 text-left transition-colors hover:bg-[#f3f4f6]"
+        >
+          <span className="text-xs font-medium uppercase tracking-widest text-[#060606]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+            Ver an&aacute;lisis completo
+          </span>
+          <ChevronDown className={`h-4 w-4 text-[#8B8C8E] transition-transform ${expandido ? "rotate-180" : ""}`} />
+        </button>
+
+        {expandido && (
+          <div className="border-t border-[#E8E9EA] px-6 py-5 space-y-4">
+            {resultado?.calidadVinculacionCliente?.calidad && (
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-[#8B8C8E]">Calidad de vinculaci&oacute;n</p>
+                <span className="mt-1 inline-block rounded-full bg-[#e0f2f2] px-3 py-1 text-sm font-semibold text-[#008080]">
+                  {resultado.calidadVinculacionCliente.calidad}
+                </span>
+              </div>
+            )}
+
+            {resultado?.cuantiaGlobal?.valor != null && (
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-[#8B8C8E]">Cuant&iacute;a global</p>
+                <p className="mt-1 text-xl font-bold text-[#008080]">
+                  {formatCurrency(String(resultado.cuantiaGlobal.valor))}
+                </p>
+              </div>
+            )}
+
+            {resultado?.pretensionesContraCliente?.totalPretendido != null && (
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-[#8B8C8E]">Total pretensiones contra el cliente</p>
+                <p className="mt-1 text-xl font-bold text-[#008080]">
+                  {formatCurrency(String(resultado.pretensionesContraCliente.totalPretendido))}
+                </p>
+              </div>
+            )}
+
+            {resultado?.estrategiaDefensa?.resumenEstrategico && (
+              <div className="border-l-4 border-[#008080] bg-[#f9fafb] px-4 py-3 rounded-r">
+                <p className="text-xs font-medium uppercase tracking-wide text-[#8B8C8E]">Resumen estrat&eacute;gico</p>
+                <p className="mt-1 text-sm leading-relaxed text-[#060606]">{resultado.estrategiaDefensa.resumenEstrategico}</p>
+              </div>
+            )}
+
+            <Link
+              href={`/ai/extraer?analisisId=${analisis.id}`}
+              className="text-sm font-medium text-[#008080] underline hover:text-[#006666]"
+            >
+              Ver ficha t&eacute;cnica completa
+            </Link>
+          </div>
+        )}
+      </div>
+
+      {/* Fecha */}
+      <p className="text-xs italic text-[#8B8C8E]">
+        An&aacute;lisis generado el {new Date(analisis.creadoEn).toLocaleDateString("es-CO", {
+          day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit"
+        })}
+      </p>
+    </div>
+  );
+}
+
+function AnalisisIASection({ procesoId }: { procesoId: string }) {
+  const router = useRouter();
+  const [data, setData] = useState<AnalisisMultiData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeAnalisisIdx, setActiveAnalisisIdx] = useState(0);
+
+  useEffect(() => {
+    async function fetchAnalisis() {
+      try {
+        const res = await fetch(`/api/procesos/${procesoId}/analisis`);
+        if (res.ok) {
+          setData(await res.json());
+        }
+      } catch {
+        // silent
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchAnalisis();
+  }, [procesoId]);
+
+  const toggleTarea = async (tarea: TareaIA) => {
+    if (!data) return;
+    const newCompletada = !tarea.completada;
+    setData(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev.tareasPorAnalisis };
+      for (const key of Object.keys(updated)) {
+        updated[key] = updated[key].map(t =>
+          t.id === tarea.id ? { ...t, completada: newCompletada } : t
+        );
+      }
+      return { ...prev, tareasPorAnalisis: updated };
+    });
+    try {
+      await fetch(`/api/ai/tareas/${tarea.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completada: newCompletada }),
+      });
+    } catch {
+      setData(prev => {
+        if (!prev) return prev;
+        const updated = { ...prev.tareasPorAnalisis };
+        for (const key of Object.keys(updated)) {
+          updated[key] = updated[key].map(t =>
+            t.id === tarea.id ? { ...t, completada: !newCompletada } : t
+          );
+        }
+        return { ...prev, tareasPorAnalisis: updated };
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="animate-pulse space-y-4">
+        <div className="h-6 w-48 rounded bg-[#E8E9EA]" />
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-10 rounded bg-[#E8E9EA]" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!data || data.analisis.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16">
+        <Sparkles className="mb-3 h-10 w-10 text-[#8B8C8E]" />
+        <p className="text-sm font-medium text-[#060606]">No hay an&aacute;lisis IA para este proceso</p>
+        <p className="mt-1 text-xs text-[#8B8C8E]">Analiza una demanda para generar la ficha t&eacute;cnica autom&aacute;ticamente</p>
+        <button
+          onClick={() => router.push(`/ai/extraer?procesoId=${procesoId}`)}
+          className="mt-4 flex items-center gap-2 rounded-sm bg-[#008080] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#006666]"
+        >
+          <Sparkles className="h-4 w-4" /> Analizar demanda
+        </button>
+      </div>
+    );
+  }
+
+  const { analisis: analisisList, tareasPorAnalisis } = data;
+  const activeAnalisis = analisisList[activeAnalisisIdx];
+  const activeTareas = tareasPorAnalisis[activeAnalisis.id] || [];
+
+  return (
+    <div className="space-y-4">
+      {/* Header with new analysis button */}
+      <div className="flex items-center justify-end">
+        <button
+          onClick={() => router.push(`/ai/extraer?procesoId=${procesoId}`)}
+          className="flex items-center gap-1 rounded-md border border-[#008080] bg-transparent px-3 py-1.5 text-sm text-[#008080] transition-colors hover:bg-[#008080]/10"
+        >
+          <Plus className="h-3.5 w-3.5" /> Nuevo an&aacute;lisis
+        </button>
+      </div>
+
+      {/* Sub-tabs if multiple analyses */}
+      {analisisList.length > 1 && (
+        <div className="flex gap-0 border-b border-[#E8E9EA]">
+          {analisisList.map((a, idx) => (
+            <button
+              key={a.id}
+              onClick={() => setActiveAnalisisIdx(idx)}
+              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors ${
+                idx === activeAnalisisIdx
+                  ? "border-[#008080] text-[#008080] font-medium"
+                  : "border-transparent text-[#8B8C8E] hover:text-[#060606]"
+              }`}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              {a.nombre || TIPO_ANALISIS_LABELS[a.tipo] || a.tipo}
+              <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                idx === activeAnalisisIdx ? "bg-[#e0f2f2] text-[#008080]" : "bg-[#f3f4f6] text-[#8B8C8E]"
+              }`}>
+                {TIPO_ANALISIS_LABELS[a.tipo]?.split(" ")[0] || a.tipo}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <AnalisisIAPanel
+        key={activeAnalisis.id}
+        analisis={activeAnalisis}
+        tareas={activeTareas}
+        onToggleTarea={toggleTarea}
+      />
+    </div>
+  );
+}
+
 export default function ProcesoDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const id = params.id as string;
 
   const [proceso, setProceso] = useState<ProcesoDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [archiving, setArchiving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"detalle" | "documentos">("detalle");
+
+  const tabParam = searchParams.get('tab');
+  const initialTab = tabParam === 'analisis' ? 'analisis-ia' as const
+    : tabParam === 'documentos' ? 'documentos' as const
+    : 'detalle' as const;
+  const [activeTab, setActiveTab] = useState<"detalle" | "documentos" | "analisis-ia">(initialTab);
 
   useEffect(() => {
     async function fetchData() {
@@ -616,6 +911,7 @@ export default function ProcesoDetailPage() {
         {([
           { key: "detalle" as const, label: "Detalle", icon: ClipboardList },
           { key: "documentos" as const, label: "Documentos", icon: FolderOpen },
+          { key: "analisis-ia" as const, label: "An\u00e1lisis IA", icon: Sparkles },
         ]).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -639,6 +935,11 @@ export default function ProcesoDetailPage() {
           procesoId={id}
           onedriveFolderPath={proceso.onedriveFolderPath}
         />
+      )}
+
+      {/* Tab: Análisis IA */}
+      {activeTab === "analisis-ia" && (
+        <AnalisisIASection procesoId={id} />
       )}
 
       {/* Tab: Detalle */}

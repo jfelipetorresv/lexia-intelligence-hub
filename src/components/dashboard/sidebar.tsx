@@ -8,6 +8,7 @@ import {
   Users,
   Briefcase,
   FileText,
+  Sparkles,
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,7 @@ const navItems = [
   { href: "/clientes", label: "Clientes", icon: Users },
   { href: "/abogados", label: "Abogados", icon: Briefcase },
   { href: "/documentos", label: "Documentos", icon: FileText },
+  { href: "/ai/extraer", label: "Análisis IA", icon: Sparkles },
   { href: "/configuracion", label: "Configuración", icon: Settings },
 ];
 

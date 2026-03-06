@@ -306,6 +306,8 @@ model Proceso {
   documentos       Documento[]
   documentosLocal  DocumentoLocal[]
   calculos         CalculoFinanciero[]
+  analisisIA       AnalisisIA[]
+  tareasIA         TareaIA[]
 
   @@map("procesos")
 }
@@ -428,6 +430,43 @@ model DocumentoLocal {
   creadoEn       DateTime @default(now())
 
   @@map("documentos_locales")
+}
+
+// ============================================================
+// ANÁLISIS IA
+// ============================================================
+
+model AnalisisIA {
+  id            String   @id @default(cuid())
+  procesoId     String
+  proceso       Proceso  @relation(fields: [procesoId], references: [id], onDelete: Cascade)
+  contenidoRaw  String   @db.Text
+  resultado     Json
+  estado        String   @default("completado")
+  tipo          String   @default("demanda_principal")
+  nombre        String?
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  tareas        TareaIA[]
+
+  @@map("analisis_ia")
+}
+
+model TareaIA {
+  id            String      @id @default(cuid())
+  procesoId     String
+  proceso       Proceso     @relation(fields: [procesoId], references: [id], onDelete: Cascade)
+  analisisId    String?
+  analisis      AnalisisIA? @relation(fields: [analisisId], references: [id], onDelete: SetNull)
+  titulo        String
+  descripcion   String?
+  completada    Boolean     @default(false)
+  orden         Int         @default(0)
+  creadoEn      DateTime    @default(now())
+  actualizadoEn DateTime    @updatedAt
+
+  @@map("tareas_ia")
 }
 
 // ============================================================
