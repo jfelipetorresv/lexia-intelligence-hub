@@ -20,6 +20,7 @@ import {
   HardDrive,
   X,
   Unlink,
+  Eye,
 } from "lucide-react";
 import { VincularOneDriveModal } from "./VincularOneDriveModal";
 
@@ -549,6 +550,14 @@ export function DocumentosPanel({ procesoId, onedriveFolderPath: initialPath }: 
   // ─── Preview handlers ───
 
   function openLocalPreview(doc: LocalDoc) {
+    // IA analysis docs: navigate directly instead of trying to download
+    if (doc.url.startsWith('/api/ai/analisis/') || doc.url.startsWith('/ai/extraer')) {
+      const analisisId = doc.url.startsWith('/api/ai/analisis/')
+        ? doc.url.replace('/api/ai/analisis/', '')
+        : new URLSearchParams(doc.url.split('?')[1] || '').get('analisisId') || '';
+      window.location.href = `/ai/extraer?analisisId=${analisisId}`;
+      return;
+    }
     const name = displayName(doc);
     const ext = getFileExt(name);
     const dlUrl = localDownloadUrl(doc.url);
@@ -872,10 +881,22 @@ function LocalFileRow({ doc, onClickName, indented }: { doc: LocalDoc; onClickNa
       <td className="hidden whitespace-nowrap px-3 py-2.5 font-data text-[13px] text-[#8B8C8E] sm:table-cell">{formatDate(doc.creadoEn)}</td>
       <td className="hidden whitespace-nowrap px-3 py-2.5 text-right font-data text-[13px] text-[#8B8C8E] sm:table-cell">{formatFileSize(doc.tamano)}</td>
       <td className="px-3 py-2.5 text-center">
-        <button onClick={() => window.open(localDownloadUrl(doc.url), "_blank")}
-          className="inline-flex items-center gap-1 rounded-sm border border-[#E8E9EA] px-2 py-1 text-[11px] font-medium text-[#060606] transition-colors hover:border-[#008080] hover:text-[#008080]">
-          <Download className="h-3 w-3" /> Descargar
-        </button>
+        {doc.url.startsWith('/api/ai/analisis/') || doc.url.startsWith('/ai/extraer') ? (
+          <button onClick={() => {
+            const analisisId = doc.url.startsWith('/api/ai/analisis/')
+              ? doc.url.replace('/api/ai/analisis/', '')
+              : new URLSearchParams(doc.url.split('?')[1] || '').get('analisisId') || '';
+            window.location.href = `/ai/extraer?analisisId=${analisisId}`;
+          }}
+            className="inline-flex items-center gap-1 rounded-sm border border-[#E8E9EA] px-2 py-1 text-[11px] font-medium text-[#008080] transition-colors hover:border-[#008080] hover:bg-[#008080]/5">
+            <Eye className="h-3 w-3" /> Ver an&aacute;lisis
+          </button>
+        ) : (
+          <button onClick={() => window.open(localDownloadUrl(doc.url), "_blank")}
+            className="inline-flex items-center gap-1 rounded-sm border border-[#E8E9EA] px-2 py-1 text-[11px] font-medium text-[#060606] transition-colors hover:border-[#008080] hover:text-[#008080]">
+            <Download className="h-3 w-3" /> Descargar
+          </button>
+        )}
       </td>
     </tr>
   );

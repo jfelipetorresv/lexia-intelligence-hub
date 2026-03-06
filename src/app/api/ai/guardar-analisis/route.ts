@@ -25,9 +25,15 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const cliente = await db.cliente.findFirst({
-        where: { organizacionId: org.id, activo: true },
-      });
+      let cliente;
+      if (body.clienteId) {
+        cliente = await db.cliente.findUnique({ where: { id: body.clienteId } });
+      }
+      if (!cliente) {
+        cliente = await db.cliente.findFirst({
+          where: { organizacionId: org.id, activo: true },
+        });
+      }
       if (!cliente) {
         return NextResponse.json(
           { error: 'No se encontro un cliente activo' },
@@ -167,6 +173,51 @@ export async function POST(request: NextRequest) {
         });
       } catch (e: any) {
         console.error('[guardar-analisis] Error asignacion líder:', e.message);
+      }
+
+      // Send email notification to abogado líder
+      try {
+        const abogado = await db.abogado.findUnique({
+          where: { id: body.abogadoLiderId },
+          select: { nombre: true, email: true },
+        });
+        if (abogado?.email) {
+          const { Resend } = await import('resend');
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+          const radicado = resultado?.radicado || 'Sin radicado';
+          const demandante = resultado?.partes?.demandantes?.[0]?.nombre ?? 'N/A';
+          const demandado = resultado?.partes?.demandados?.[0]?.nombre ?? 'N/A';
+          const fromEmail = process.env.RESEND_FROM_EMAIL ?? 'Lexia Hub <onboarding@resend.dev>';
+
+          await resend.emails.send({
+            from: fromEmail,
+            to: abogado.email,
+            subject: `Nuevo expediente asignado: ${radicado}`,
+            html: `
+              <div style="font-family: 'Helvetica Neue', Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px;">
+                <h2 style="color: #008080; margin-bottom: 16px;">Nuevo expediente asignado</h2>
+                <p style="color: #333; font-size: 15px;">Hola <strong>${abogado.nombre}</strong>,</p>
+                <p style="color: #333; font-size: 15px;">Se te ha asignado como abogado l&iacute;der en un nuevo expediente creado desde an&aacute;lisis IA:</p>
+                <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                  <tr style="border-bottom: 1px solid #e5e7eb;">
+                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Radicado</td>
+                    <td style="padding: 8px 0; font-weight: 600; font-size: 14px;">${radicado}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #e5e7eb;">
+                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Partes</td>
+                    <td style="padding: 8px 0; font-size: 14px;">${demandante} vs. ${demandado}</td>
+                  </tr>
+                </table>
+                <a href="${appUrl}/procesos/${targetProcesoId}" style="display: inline-block; background: #008080; color: white; padding: 10px 24px; border-radius: 4px; text-decoration: none; font-size: 14px; font-weight: 500;">Ver expediente</a>
+                <p style="color: #9ca3af; font-size: 12px; margin-top: 24px;">Lexia Intelligence Hub</p>
+              </div>
+            `,
+          });
+          console.log('[guardar-analisis] Email enviado a:', abogado.email);
+        }
+      } catch (emailErr: any) {
+        console.error('[guardar-analisis] Error enviando email (no bloqueante):', emailErr.message);
       }
     }
     if (body.abogadoApoyoId) {

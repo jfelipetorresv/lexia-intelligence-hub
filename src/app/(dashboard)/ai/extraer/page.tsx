@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Loader2, Upload, FileText, Sparkles, AlertTriangle,
-  RotateCcw, Save, ShieldAlert, CheckCircle, Scale,
+  Save, ShieldAlert, CheckCircle, Scale,
   FolderPlus, Check, X, ArrowLeft, Search,
 } from "lucide-react";
 import type { DemandaExtraida } from "@/lib/ai/extractDemanda";
@@ -102,26 +102,15 @@ export default function ExtraerDemandaPage() {
   const [abogados, setAbogados] = useState<any[]>([]);
   const [abogadoLiderId, setAbogadoLiderId] = useState("");
   const [abogadoApoyoId, setAbogadoApoyoId] = useState("");
+  const [mostrarAbogadoApoyo, setMostrarAbogadoApoyo] = useState(false);
+  const [clienteIdGuardar, setClienteIdGuardar] = useState('');
 
-  // Guardar documento modal state
-  const [modalGuardarDoc, setModalGuardarDoc] = useState(false);
-  const [nombreDocGuardar, setNombreDocGuardar] = useState("Demanda analizada");
-  const [carpetaDocGuardar, setCarpetaDocGuardar] = useState("Documentos generales");
-  const [carpetas, setCarpetas] = useState([
-    'Documentos generales', 'Demandas',
-    'Llamamientos en garantía', 'Arbitrajes',
-  ]);
-  const [creandoCarpeta, setCreandoCarpeta] = useState(false);
-  const [nombreNuevaCarpeta, setNombreNuevaCarpeta] = useState('');
-
-  // Vincular a proceso state
-  const [vincularProceso, setVincularProceso] = useState(false);
+  // Unified modal state
+  const [modoGuardar, setModoGuardar] = useState<'crear' | 'vincular'>('crear');
   const [busquedaProceso, setBusquedaProceso] = useState('');
-  const [procesosResultados, setProcesosResultados] = useState<any[]>([]);
+  const [todosLosProcesos, setTodosLosProcesos] = useState<any[]>([]);
   const [procesoSeleccionado, setProcesoSeleccionado] = useState<any | null>(null);
-  const [buscandoProcesos, setBuscandoProcesos] = useState(false);
-  const [guardandoDoc, setGuardandoDoc] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [cargandoProcesos, setCargandoProcesos] = useState(false);
 
   // Load clientes when entering configuracion
   useEffect(() => {
@@ -133,13 +122,21 @@ export default function ExtraerDemandaPage() {
     }
   }, [estado]);
 
-  // Load abogados when modal opens
+  // Load abogados and clientes when modal opens
   useEffect(() => {
     if (mostrarModalGuardar) {
       fetch("/api/abogados")
         .then((r) => r.json())
         .then((data) => setAbogados(Array.isArray(data) ? data : data.abogados || []))
         .catch(() => setAbogados([]));
+      if (clientes.length === 0) {
+        fetch("/api/clientes")
+          .then((r) => r.json())
+          .then((data) => setClientes(Array.isArray(data) ? data : []))
+          .catch(() => setClientes([]));
+      }
+      // Pre-select client from configuracion step
+      if (clienteId && !clienteIdGuardar) setClienteIdGuardar(clienteId);
     }
   }, [mostrarModalGuardar]);
 
@@ -244,8 +241,9 @@ export default function ExtraerDemandaPage() {
           proximosPasos: resultado.estrategiaDefensa?.proximosPasos ?? [],
           tipoAnalisis,
           nombreAnalisis: nombreAnalisis || undefined,
+          clienteId: clienteIdGuardar || undefined,
           abogadoLiderId: abogadoLiderId || undefined,
-          abogadoApoyoId: abogadoApoyoId || undefined,
+          abogadoApoyoId: (mostrarAbogadoApoyo && abogadoApoyoId) || undefined,
         }),
       });
       if (!res.ok) {
@@ -400,7 +398,7 @@ export default function ExtraerDemandaPage() {
         {/* Back to process */}
         {(procesoIdGuardado || procesoIdFromAnalisis) && (
           <button
-            onClick={() => router.push(`/procesos/${procesoIdGuardado || procesoIdFromAnalisis}?tab=analisis`)}
+            onClick={() => router.push(`/procesos/${procesoIdGuardado || procesoIdFromAnalisis}`)}
             className="flex items-center gap-1 text-sm text-[#008080] hover:underline mb-4"
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Volver al expediente
@@ -792,7 +790,7 @@ export default function ExtraerDemandaPage() {
           </div>
         </div>
 
-        {/* ── BOTONES ── */}
+        {/* ── FOOTER ── */}
         <div className="flex items-center justify-between pt-2">
           <p className="text-[11px] text-[#8B8C8E]">
             <AlertTriangle className="mr-1 inline h-3 w-3" />
@@ -803,50 +801,32 @@ export default function ExtraerDemandaPage() {
               onClick={handleReset}
               className="flex items-center gap-1.5 rounded-sm border border-[#E8E9EA] bg-white px-4 py-2 text-sm font-medium text-[#060606] transition-colors hover:bg-[#FAFBFC]"
             >
-              <RotateCcw className="h-3.5 w-3.5" /> Analizar otro documento
+              <ArrowLeft className="h-3.5 w-3.5" /> Analizar otro documento
             </button>
-            {(estaVinculado || procesoIdFromAnalisis) ? (
+            {(procesoIdGuardado || procesoIdFromAnalisis) && (
               <button
-                onClick={() => router.push(`/procesos/${procesoIdGuardado || procesoIdFromAnalisis}?tab=analisis`)}
-                className="flex items-center gap-1.5 rounded-md bg-[#008080] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#006666]"
+                onClick={() => router.push(`/procesos/${procesoIdGuardado || procesoIdFromAnalisis}`)}
+                className="flex items-center gap-1.5 rounded-sm border border-[#E8E9EA] bg-white px-4 py-2 text-sm font-medium text-[#060606] transition-colors hover:bg-[#FAFBFC]"
               >
                 <ArrowLeft className="h-3.5 w-3.5" /> Volver al expediente
               </button>
-            ) : (
-              <>
-                <button
-                  onClick={() => setModalGuardarDoc(true)}
-                  className="flex items-center gap-1.5 rounded-sm border border-[#374151] px-4 py-2 text-sm font-medium text-[#374151] bg-transparent transition-colors hover:bg-[#FAFBFC]"
-                >
-                  <Save className="h-3.5 w-3.5" /> Guardar documento
-                </button>
-                <button
-                  onClick={() => setMostrarModalGuardar(true)}
-                  className="flex items-center gap-1.5 rounded-sm bg-[#008080] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#006666]"
-                >
-                  <FolderPlus className="h-3.5 w-3.5" /> Crear proceso desde este an&aacute;lisis
-                </button>
-                <button
-                  onClick={() => {
-                    setCrearProcesoCheck(false);
-                    setMostrarModalGuardar(true);
-                  }}
-                  className="flex items-center gap-1.5 rounded-sm bg-[#0a1628] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#111d33]"
-                >
-                  <Save className="h-3.5 w-3.5" /> Guardar an&aacute;lisis
-                </button>
-              </>
             )}
+            <button
+              onClick={() => setMostrarModalGuardar(true)}
+              className="flex items-center gap-1.5 rounded-sm bg-[#008080] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#006666]"
+            >
+              <Save className="h-3.5 w-3.5" /> Guardar an&aacute;lisis
+            </button>
           </div>
         </div>
 
-        {/* ── MODAL GUARDAR ── */}
+        {/* ── MODAL UNIFICADO GUARDAR ── */}
         {mostrarModalGuardar && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="w-full max-w-md rounded-sm border border-[#E8E9EA] bg-white p-6 shadow-xl">
+            <div className="w-full max-w-lg rounded-sm border border-[#E8E9EA] bg-white p-6 shadow-xl" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-base font-semibold text-[#060606]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-                  Guardar an&aacute;lisis y crear expediente
+                  Guardar an&aacute;lisis
                 </h2>
                 <button onClick={() => setMostrarModalGuardar(false)} className="text-[#8B8C8E] hover:text-[#060606]">
                   <X className="h-5 w-5" />
@@ -854,368 +834,280 @@ export default function ExtraerDemandaPage() {
               </div>
 
               <div className="space-y-4">
-                  {r.radicado && (
-                    <div className="rounded-sm bg-[#FAFBFC] px-3 py-2 text-sm">
-                      <span className="text-[#8B8C8E]">Radicado:</span>{" "}
-                      <span className="font-mono font-medium text-[#060606]">{r.radicado}</span>
-                    </div>
-                  )}
-
-                  <label className="flex cursor-pointer items-center gap-3 rounded-sm border border-[#E8E9EA] px-4 py-3 transition-colors hover:bg-[#FAFBFC]">
-                    <input
-                      type="checkbox"
-                      checked={crearProcesoCheck}
-                      onChange={(e) => setCrearProcesoCheck(e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-300 text-[#008080] focus:ring-[#008080]"
-                    />
-                    <span className="text-sm text-[#060606]">Crear nuevo proceso autom&aacute;ticamente</span>
-                  </label>
-
-                  {!crearProcesoCheck && (
-                    <p className="text-xs text-[#8B8C8E]">
-                      El an&aacute;lisis se guardar&aacute; sin vincular a un proceso existente. Se crear&aacute; un proceso temporal para almacenarlo.
-                    </p>
-                  )}
-
-                  <div>
-                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#8B8C8E]">
-                      Tipo de documento
-                    </label>
-                    <select
-                      value={tipoAnalisis}
-                      onChange={(e) => setTipoAnalisis(e.target.value)}
-                      className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
-                    >
-                      <option value="demanda_principal">Demanda principal</option>
-                      <option value="llamamiento_garantia">Llamamiento en garant&iacute;a</option>
-                      <option value="demanda_reconvencion">Demanda de reconvenci&oacute;n</option>
-                      <option value="otro">Otro documento</option>
-                    </select>
+                {/* Radicado badge */}
+                {r.radicado && (
+                  <div className="rounded-sm bg-[#FAFBFC] px-3 py-2 text-sm">
+                    <span className="text-[#8B8C8E]">Radicado:</span>{" "}
+                    <span className="font-mono font-medium text-[#060606]">{r.radicado}</span>
                   </div>
+                )}
 
-                  <div>
-                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#8B8C8E]">
-                      Nombre del documento (opcional)
-                    </label>
-                    <input
-                      type="text"
-                      value={nombreAnalisis}
-                      onChange={(e) => setNombreAnalisis(e.target.value)}
-                      placeholder="ej. Llamamiento en garant&iacute;a EPM vs Seguros del Estado"
-                      className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] placeholder:text-[#8B8C8E] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#8B8C8E]">
-                      Abogado l&iacute;der
-                    </label>
-                    <select
-                      value={abogadoLiderId}
-                      onChange={(e) => setAbogadoLiderId(e.target.value)}
-                      className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
-                    >
-                      <option value="">Sin asignar</option>
-                      {abogados.map((a: any) => (
-                        <option key={a.id} value={a.id}>{a.nombre} — {a.rol}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#8B8C8E]">
-                      Abogado de apoyo (opcional)
-                    </label>
-                    <select
-                      value={abogadoApoyoId}
-                      onChange={(e) => setAbogadoApoyoId(e.target.value)}
-                      className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
-                    >
-                      <option value="">Sin asignar</option>
-                      {abogados.map((a: any) => (
-                        <option key={a.id} value={a.id}>{a.nombre} — {a.rol}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setMostrarModalGuardar(false)}
-                      className="flex-1 rounded-sm border border-[#E8E9EA] bg-white px-4 py-2.5 text-sm font-medium text-[#060606] transition-colors hover:bg-[#FAFBFC]"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      onClick={handleGuardar}
-                      disabled={guardando}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-sm bg-[#008080] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#006666] disabled:opacity-50"
-                    >
-                      {guardando ? (
-                        <><Loader2 className="h-4 w-4 animate-spin" /> Guardando...</>
-                      ) : (
-                        "Confirmar y guardar"
-                      )}
-                    </button>
-                  </div>
-                </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── MODAL GUARDAR DOCUMENTO ── */}
-        {modalGuardarDoc && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="w-full max-w-md rounded-sm border border-[#E8E9EA] bg-white p-6 shadow-xl">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-[#060606]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-                  Guardar documento del an&aacute;lisis
-                </h2>
-                <button onClick={() => setModalGuardarDoc(false)} className="text-[#8B8C8E] hover:text-[#060606]">
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
                 {/* Nombre del archivo */}
                 <div>
                   <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#8B8C8E]">
-                    Nombre del archivo
+                    Nombre del documento
                   </label>
                   <input
                     type="text"
-                    value={nombreDocGuardar}
-                    onChange={(e) => setNombreDocGuardar(e.target.value)}
-                    placeholder="Demanda analizada"
+                    value={nombreAnalisis}
+                    onChange={(e) => setNombreAnalisis(e.target.value)}
+                    placeholder={`Demanda - ${r.partes?.demandantes?.[0]?.nombre ?? ''} vs ${r.partes?.demandados?.[0]?.nombre ?? ''}`}
                     className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] placeholder:text-[#8B8C8E] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
                   />
                 </div>
 
-                {/* Vincular a expediente */}
-                <div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={vincularProceso}
-                      onChange={(e) => {
-                        setVincularProceso(e.target.checked);
-                        if (!e.target.checked) {
-                          setProcesoSeleccionado(null);
-                          setBusquedaProceso('');
-                          setProcesosResultados([]);
-                        }
-                      }}
-                      className="h-4 w-4 rounded border-[#E8E9EA] text-[#008080] focus:ring-[#008080]"
-                    />
-                    <span className="text-sm font-medium text-[#060606]">Vincular a un expediente existente</span>
-                  </label>
-
-                  {vincularProceso && (
-                    <div className="mt-2">
-                      {procesoSeleccionado ? (
-                        <div className="flex items-center justify-between rounded-lg border border-[#008080] bg-[#f0fdf9] px-3 py-2.5">
-                          <span className="text-sm text-[#006666]">
-                            <CheckCircle className="mr-1.5 inline h-3.5 w-3.5" />
-                            <span className="font-semibold">{procesoSeleccionado.radicado}</span>
-                            {' — '}
-                            {procesoSeleccionado.demandante || 'N/A'} vs {procesoSeleccionado.demandado || 'N/A'}
-                          </span>
-                          <button
-                            onClick={() => { setProcesoSeleccionado(null); setBusquedaProceso(''); setProcesosResultados([]); }}
-                            className="ml-2 text-[#8B8C8E] hover:text-[#060606]"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden', margin: '0 -4px' }}>
-                          {/* Search input */}
-                          <div className="relative flex items-center" style={{ borderBottom: '1px solid #e5e7eb' }}>
-                            <Search className="absolute left-3 h-4 w-4 text-[#9ca3af]" />
-                            <input
-                              type="text"
-                              value={busquedaProceso}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setBusquedaProceso(val);
-                                if (debounceRef.current) clearTimeout(debounceRef.current);
-                                if (val.length < 2) { setProcesosResultados([]); setBuscandoProcesos(false); return; }
-                                setBuscandoProcesos(true);
-                                debounceRef.current = setTimeout(() => {
-                                  fetch(`/api/procesos?busqueda=${encodeURIComponent(val)}`)
-                                    .then(r => r.json())
-                                    .then(data => setProcesosResultados(data.procesos?.slice(0, 6) || []))
-                                    .catch(() => setProcesosResultados([]))
-                                    .finally(() => setBuscandoProcesos(false));
-                                }, 350);
-                              }}
-                              placeholder="Buscar proceso..."
-                              className="w-full bg-white pl-9 pr-9 text-sm text-[#111827] placeholder:text-[#9ca3af] focus:outline-none"
-                              style={{ border: 'none', fontSize: '14px', padding: '12px 14px', paddingLeft: '36px', paddingRight: '36px' }}
-                            />
-                            {buscandoProcesos && (
-                              <Loader2 className="absolute right-3 h-4 w-4 animate-spin text-[#9ca3af]" />
-                            )}
-                            {!buscandoProcesos && busquedaProceso && (
-                              <button
-                                onClick={() => { setBusquedaProceso(''); setProcesosResultados([]); }}
-                                className="absolute right-3 text-[#9ca3af] hover:text-[#060606]"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
-                          {/* Results list */}
-                          <div style={{ maxHeight: '260px', overflowY: 'auto' }}>
-                            {busquedaProceso.length < 2 ? (
-                              <div className="flex flex-col items-center justify-center gap-1.5 py-8">
-                                <Search className="h-5 w-5 text-[#9ca3af]" />
-                                <p className="text-xs text-[#9ca3af]">Escribe para buscar por radicado o partes</p>
-                              </div>
-                            ) : buscandoProcesos ? (
-                              <div className="flex items-center justify-center py-8">
-                                <Loader2 className="h-5 w-5 animate-spin text-[#008080]" />
-                              </div>
-                            ) : procesosResultados.length === 0 ? (
-                              <p className="py-8 text-center text-xs text-[#9ca3af]">
-                                No se encontraron procesos con ese t&eacute;rmino
-                              </p>
-                            ) : (
-                              procesosResultados.map((p: any) => (
-                                <button
-                                  key={p.id}
-                                  onClick={() => {
-                                    setProcesoSeleccionado(p);
-                                    setBusquedaProceso('');
-                                    setProcesosResultados([]);
-                                  }}
-                                  className="block w-full text-left transition-colors hover:bg-[#f0fdf9]"
-                                  style={{ padding: '10px 14px', borderBottom: '1px solid #f3f4f6', cursor: 'pointer' }}
-                                >
-                                  <span className="block text-sm font-semibold text-[#111827]">{p.radicado}</span>
-                                  <span className="block text-[#6b7280]" style={{ fontSize: '13px' }}>
-                                    {p.demandante || 'N/A'} vs. {p.demandado || 'N/A'}
-                                  </span>
-                                  <span className="block text-[#9ca3af]" style={{ fontSize: '12px' }}>
-                                    {p.tipoProceso || 'Sin tipo'}{p.ciudad ? ` — ${p.ciudad}` : ''}
-                                  </span>
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Carpeta destino */}
+                {/* Cliente */}
                 <div>
                   <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#8B8C8E]">
-                    Carpeta destino
+                    Cliente
                   </label>
-                  {creandoCarpeta ? (
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={nombreNuevaCarpeta}
-                        onChange={(e) => setNombreNuevaCarpeta(e.target.value)}
-                        placeholder="Nombre de la nueva carpeta"
-                        className="flex-1 rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] placeholder:text-[#8B8C8E] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
-                        autoFocus
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && nombreNuevaCarpeta.trim()) {
-                            const nombre = nombreNuevaCarpeta.trim();
-                            if (!carpetas.includes(nombre)) setCarpetas(prev => [...prev, nombre]);
-                            setCarpetaDocGuardar(nombre);
-                            setNombreNuevaCarpeta('');
-                            setCreandoCarpeta(false);
-                          }
-                        }}
-                      />
-                      <button
-                        onClick={() => {
-                          const nombre = nombreNuevaCarpeta.trim();
-                          if (!nombre) return;
-                          if (!carpetas.includes(nombre)) setCarpetas(prev => [...prev, nombre]);
-                          setCarpetaDocGuardar(nombre);
-                          setNombreNuevaCarpeta('');
-                          setCreandoCarpeta(false);
-                        }}
-                        className="rounded-sm bg-[#008080] px-3 py-2 text-sm font-medium text-white hover:bg-[#006666]"
-                      >
-                        Crear
-                      </button>
-                      <button
-                        onClick={() => { setCreandoCarpeta(false); setNombreNuevaCarpeta(''); }}
-                        className="rounded-sm border border-[#E8E9EA] px-3 py-2 text-sm text-[#8B8C8E] hover:text-[#060606]"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <select
-                        value={carpetaDocGuardar}
-                        onChange={(e) => setCarpetaDocGuardar(e.target.value)}
-                        className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
-                      >
-                        {carpetas.map(c => (
-                          <option key={c} value={c}>{c}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => setCreandoCarpeta(true)}
-                        className="mt-1.5 text-xs font-medium text-[#008080] hover:text-[#006666]"
-                      >
-                        + Nueva carpeta
-                      </button>
-                    </>
-                  )}
+                  <select
+                    value={clienteIdGuardar}
+                    onChange={(e) => setClienteIdGuardar(e.target.value)}
+                    className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+                  >
+                    <option value="">Selecciona el cliente...</option>
+                    {clientes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nombre} ({c.tipo === 'ASEGURADORA' ? 'Aseguradora' : c.tipo === 'EMPRESA' ? 'Empresa' : 'Persona'})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                {/* Botones */}
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setModalGuardarDoc(false)}
-                    className="flex-1 rounded-sm border border-[#E8E9EA] bg-white px-4 py-2.5 text-sm font-medium text-[#060606] transition-colors hover:bg-[#FAFBFC]"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    disabled={guardandoDoc}
-                    onClick={async () => {
-                      if (procesoSeleccionado) {
-                        setGuardandoDoc(true);
-                        try {
-                          const res = await fetch('/api/documentos', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              procesoId: procesoSeleccionado.id,
-                              nombre: nombreDocGuardar,
-                              url: '/analisis-ia/' + Date.now(),
-                              descripcion: 'Guardado desde an\u00e1lisis IA — carpeta: ' + carpetaDocGuardar,
-                            }),
-                          });
-                          if (!res.ok) throw new Error('Error al guardar');
-                          setModalGuardarDoc(false);
-                          showToast(`Documento guardado y vinculado a ${procesoSeleccionado.radicado}`);
-                        } catch {
-                          showToast('Error al guardar el documento');
-                        } finally {
-                          setGuardandoDoc(false);
+                {/* ── Modo selector: Crear / Vincular ── */}
+                <div>
+                  <label className="mb-2 block text-[11px] font-medium uppercase tracking-wide text-[#8B8C8E]">
+                    &iquest;Qu&eacute; deseas hacer?
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setModoGuardar('crear')}
+                      className={`rounded-sm border px-3 py-2.5 text-sm font-medium transition-colors ${
+                        modoGuardar === 'crear'
+                          ? 'border-[#008080] bg-[#008080]/5 text-[#006666]'
+                          : 'border-[#E8E9EA] bg-white text-[#8B8C8E] hover:border-[#008080]/50'
+                      }`}
+                    >
+                      <FolderPlus className="mb-1 inline h-4 w-4" /> Crear nuevo proceso
+                    </button>
+                    <button
+                      onClick={() => {
+                        setModoGuardar('vincular');
+                        if (todosLosProcesos.length === 0) {
+                          setCargandoProcesos(true);
+                          fetch('/api/procesos')
+                            .then(r2 => r2.json())
+                            .then(data => setTodosLosProcesos(data.procesos || []))
+                            .catch(() => setTodosLosProcesos([]))
+                            .finally(() => setCargandoProcesos(false));
                         }
-                      } else {
-                        setModalGuardarDoc(false);
-                        showToast(`Documento guardado en ${carpetaDocGuardar}`);
-                      }
-                    }}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-sm bg-[#008080] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#006666] disabled:opacity-50"
-                  >
-                    {guardandoDoc ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    Guardar
-                  </button>
+                      }}
+                      className={`rounded-sm border px-3 py-2.5 text-sm font-medium transition-colors ${
+                        modoGuardar === 'vincular'
+                          ? 'border-[#008080] bg-[#008080]/5 text-[#006666]'
+                          : 'border-[#E8E9EA] bg-white text-[#8B8C8E] hover:border-[#008080]/50'
+                      }`}
+                    >
+                      <Scale className="mb-1 inline h-4 w-4" /> Vincular a existente
+                    </button>
+                  </div>
                 </div>
+
+                {/* ── Opción A: Crear nuevo expediente ── */}
+                {modoGuardar === 'crear' && (
+                  <div className="space-y-4 rounded-sm border border-[#E8E9EA] bg-[#FAFBFC] p-4">
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#8B8C8E]">
+                        Tipo de documento
+                      </label>
+                      <select
+                        value={tipoAnalisis}
+                        onChange={(e) => setTipoAnalisis(e.target.value)}
+                        className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+                      >
+                        <option value="demanda_principal">Demanda principal</option>
+                        <option value="llamamiento_garantia">Llamamiento en garant&iacute;a</option>
+                        <option value="demanda_reconvencion">Demanda de reconvenci&oacute;n</option>
+                        <option value="otro">Otro documento</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#8B8C8E]">
+                        Abogado l&iacute;der
+                      </label>
+                      <select
+                        value={abogadoLiderId}
+                        onChange={(e) => setAbogadoLiderId(e.target.value)}
+                        className="w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+                      >
+                        <option value="">Sin asignar</option>
+                        {abogados.map((a: any) => (
+                          <option key={a.id} value={a.id}>{a.nombre} — {a.rol}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={mostrarAbogadoApoyo}
+                          onChange={(e) => {
+                            setMostrarAbogadoApoyo(e.target.checked);
+                            if (!e.target.checked) setAbogadoApoyoId('');
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 text-[#008080] focus:ring-[#008080]"
+                        />
+                        <span className="text-sm text-[#060606]">Agregar abogado de apoyo</span>
+                      </label>
+                      {mostrarAbogadoApoyo && (
+                        <select
+                          value={abogadoApoyoId}
+                          onChange={(e) => setAbogadoApoyoId(e.target.value)}
+                          className="mt-2 w-full rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+                        >
+                          <option value="">Seleccionar abogado...</option>
+                          {abogados.map((a: any) => (
+                            <option key={a.id} value={a.id}>{a.nombre} — {a.rol}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Opción B: Vincular a expediente existente ── */}
+                {modoGuardar === 'vincular' && (() => {
+                  const q = busquedaProceso.toLowerCase();
+                  const procesosFiltrados = q.length >= 2
+                    ? todosLosProcesos.filter((p: any) =>
+                        p.radicado?.toLowerCase().includes(q) ||
+                        p.demandante?.toLowerCase().includes(q) ||
+                        p.demandado?.toLowerCase().includes(q)
+                      )
+                    : todosLosProcesos;
+                  return (
+                  <div className="space-y-3">
+                    {procesoSeleccionado ? (
+                      <div className="flex items-center justify-between rounded-lg border border-[#008080] bg-[#f0fdf9] px-3 py-2.5">
+                        <span className="text-sm text-[#006666]">
+                          <CheckCircle className="mr-1.5 inline h-3.5 w-3.5" />
+                          <span className="font-semibold">{procesoSeleccionado.radicado}</span>
+                          {' — '}
+                          {procesoSeleccionado.demandante || 'N/A'} vs {procesoSeleccionado.demandado || 'N/A'}
+                        </span>
+                        <button
+                          onClick={() => { setProcesoSeleccionado(null); setBusquedaProceso(''); }}
+                          className="ml-2 text-[#8B8C8E] hover:text-[#060606]"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' }}>
+                        <div className="relative flex items-center" style={{ borderBottom: '1px solid #e5e7eb' }}>
+                          <Search className="absolute left-3 h-4 w-4 text-[#9ca3af]" />
+                          <input
+                            type="text"
+                            value={busquedaProceso}
+                            onChange={(e) => setBusquedaProceso(e.target.value)}
+                            placeholder="Buscar por radicado o partes..."
+                            className="w-full bg-white text-sm text-[#111827] placeholder:text-[#9ca3af] focus:outline-none"
+                            style={{ border: 'none', fontSize: '14px', padding: '12px 14px', paddingLeft: '36px', paddingRight: '36px' }}
+                          />
+                          {busquedaProceso && (
+                            <button
+                              onClick={() => setBusquedaProceso('')}
+                              className="absolute right-3 text-[#9ca3af] hover:text-[#060606]"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                        <div style={{ maxHeight: '260px', overflowY: 'auto' }}>
+                          {cargandoProcesos ? (
+                            <div className="flex items-center justify-center py-8">
+                              <Loader2 className="h-5 w-5 animate-spin text-[#008080]" />
+                            </div>
+                          ) : procesosFiltrados.length === 0 ? (
+                            <p className="py-8 text-center text-xs text-[#9ca3af]">
+                              {busquedaProceso ? 'No se encontraron procesos con ese t\u00e9rmino' : 'No hay procesos registrados'}
+                            </p>
+                          ) : (
+                            procesosFiltrados.map((p: any) => (
+                              <button
+                                key={p.id}
+                                onClick={() => {
+                                  setProcesoSeleccionado(p);
+                                  setBusquedaProceso('');
+                                }}
+                                className="block w-full text-left transition-colors hover:bg-[#f0fdf9]"
+                                style={{ padding: '10px 14px', borderBottom: '1px solid #f3f4f6', cursor: 'pointer' }}
+                              >
+                                <span className="block text-sm font-semibold text-[#111827]">{p.radicado}</span>
+                                <span className="block text-[#6b7280]" style={{ fontSize: '13px' }}>
+                                  {p.demandante || 'N/A'} vs. {p.demandado || 'N/A'}
+                                </span>
+                                <span className="block text-[#9ca3af]" style={{ fontSize: '12px' }}>
+                                  {p.tipoProceso || 'Sin tipo'}{p.ciudad ? ` — ${p.ciudad}` : ''}
+                                </span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  );
+                })()}
+
+                {/* Botón final */}
+                <button
+                  onClick={async () => {
+                    if (modoGuardar === 'crear') {
+                      handleGuardar();
+                    } else {
+                      if (!procesoSeleccionado) { showToast('Selecciona un expediente'); return; }
+                      setGuardando(true);
+                      try {
+                        const res = await fetch('/api/ai/guardar-analisis', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            procesoId: procesoSeleccionado.id,
+                            crearProceso: false,
+                            textoExtraido,
+                            resultado,
+                            proximosPasos: resultado?.estrategiaDefensa?.proximosPasos ?? [],
+                            tipoAnalisis: 'demanda_principal',
+                            nombreAnalisis: nombreAnalisis || undefined,
+                          }),
+                        });
+                        if (!res.ok) {
+                          const data = await res.json().catch(() => null);
+                          throw new Error(data?.error ?? 'Error al guardar');
+                        }
+                        const data = await res.json();
+                        setMostrarModalGuardar(false);
+                        router.push(`/procesos/${procesoSeleccionado.id}`);
+                      } catch (err) {
+                        showToast(err instanceof Error ? err.message : 'Error al vincular el documento');
+                      } finally {
+                        setGuardando(false);
+                      }
+                    }
+                  }}
+                  disabled={guardando || (modoGuardar === 'vincular' && !procesoSeleccionado)}
+                  className="flex w-full items-center justify-center gap-2 rounded-sm bg-[#008080] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#006666] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {guardando ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" /> Guardando...</>
+                  ) : (
+                    "Confirmar y guardar"
+                  )}
+                </button>
               </div>
             </div>
           </div>
