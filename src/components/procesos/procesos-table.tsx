@@ -2,10 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { EstadoBadge } from "./estado-badge";
 import { SemaforoBadge } from "./semaforo-badge";
 import { formatRadicado, TIPO_PROCESO_LABELS } from "@/lib/formato";
-import { Scale } from "lucide-react";
+import { Scale, MoreVertical, Eye, Pencil, Trash2 } from "lucide-react";
 import type { ProcesoListItem } from "@/types/proceso";
 
 function formatDate(date: Date | null): string {
@@ -15,6 +16,77 @@ function formatDate(date: Date | null): string {
     month: "short",
     year: "numeric",
   });
+}
+
+function ProcesoMenu({ proceso }: { proceso: ProcesoListItem }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const handleClickOutside = useCallback((e: MouseEvent) => {
+    if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (open) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open, handleClickOutside]);
+
+  const handleDelete = async () => {
+    setOpen(false);
+    const ok = window.confirm(
+      `¿Eliminar este proceso? Esta acción no se puede deshacer.\nRadicado: ${proceso.radicado}`
+    );
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/procesos/${proceso.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.ok) {
+        router.refresh();
+      } else {
+        alert(data.error || "Error al eliminar el proceso");
+      }
+    } catch {
+      alert("Error de conexión al eliminar el proceso");
+    }
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        className="rounded p-1 text-[#8B8C8E] hover:bg-[#F5F5F5] hover:text-[#060606]"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-[#E8E9EA] bg-white py-1 shadow-lg">
+          <button
+            onClick={(e) => { e.stopPropagation(); setOpen(false); router.push(`/procesos/${proceso.id}`); }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[#060606] hover:bg-[#FAFBFC]"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Ver proceso
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setOpen(false); router.push(`/procesos/${proceso.id}/editar`); }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[#060606] hover:bg-[#FAFBFC]"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Editar proceso
+          </button>
+          <div className="my-1 border-t border-[#E8E9EA]" />
+          <button
+            onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-500 hover:bg-red-50"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Eliminar proceso
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ProcesosTable({
@@ -64,6 +136,7 @@ export function ProcesosTable({
             <th className="px-4 py-3 text-center text-[11px] font-medium uppercase tracking-[0.08em] text-white" style={{ fontFamily: "'DM Sans', sans-serif" }}>
               Semáforo
             </th>
+            <th className="w-12 px-2 py-3" />
           </tr>
         </thead>
         <tbody>
@@ -123,6 +196,9 @@ export function ProcesosTable({
               </td>
               <td className="px-4 py-3.5 text-center">
                 <SemaforoBadge semaforo={proceso.semaforo} />
+              </td>
+              <td className="px-2 py-3.5 text-center">
+                <ProcesoMenu proceso={proceso} />
               </td>
             </tr>
           ))}

@@ -2,6 +2,7 @@ export interface ZurichInformeData {
   // Encabezado
   tipoInforme: "INICIAL" | "INTERMEDIO";
   fechaInforme: string;
+  clienteNombre: string;
 
   // Identificación del proceso
   despacho: string;
@@ -60,6 +61,7 @@ export interface ZurichInformeData {
 
 // Datos mock para pruebas
 export const mockZurichData: ZurichInformeData = {
+  clienteNombre: "Zúrich Colombia Seguros S.A.",
   tipoInforme: "INTERMEDIO",
   fechaInforme: new Date().toLocaleDateString("es-CO", {
     day: "2-digit",

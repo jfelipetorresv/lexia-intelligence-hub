@@ -125,6 +125,24 @@ export async function PUT(
   }
 }
 
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    await db.proceso.delete({
+      where: { id: params.id },
+    });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("Error eliminando proceso:", error);
+    return NextResponse.json(
+      { error: "No se pudo eliminar el proceso" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -160,6 +178,42 @@ export async function PATCH(
       data,
       select: { id: true, estadoActual: true },
     });
+
+    // Handle abogado líder change
+    if ("abogadoLiderId" in body && body.abogadoLiderId) {
+      await db.asignacion.updateMany({
+        where: {
+          procesoId: params.id,
+          rolEnCaso: "LIDER",
+          activa: true,
+        },
+        data: { activa: false },
+      });
+
+      const existing = await db.asignacion.findUnique({
+        where: {
+          procesoId_abogadoId: {
+            procesoId: params.id,
+            abogadoId: body.abogadoLiderId,
+          },
+        },
+      });
+
+      if (existing) {
+        await db.asignacion.update({
+          where: { id: existing.id },
+          data: { rolEnCaso: "LIDER", activa: true },
+        });
+      } else {
+        await db.asignacion.create({
+          data: {
+            procesoId: params.id,
+            abogadoId: body.abogadoLiderId,
+            rolEnCaso: "LIDER",
+          },
+        });
+      }
+    }
 
     return NextResponse.json({ proceso });
   } catch (error) {

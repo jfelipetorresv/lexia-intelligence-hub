@@ -6,7 +6,6 @@ import Link from "next/link";
 import {
   ArrowLeft,
   FileText,
-  Paperclip,
   Calculator,
   ClipboardList,
   Plus,
@@ -24,6 +23,8 @@ import {
   Search,
   ArrowLeftIcon,
   Building2,
+  User,
+  AlertTriangle,
 } from "lucide-react";
 import { DocumentosPanel } from "@/components/DocumentosPanel";
 import { ChatIAPanel } from "@/components/procesos/ChatIAPanel";
@@ -48,6 +49,26 @@ function formatDate(date: Date | string | null): string {
     month: "short",
     year: "numeric",
   });
+}
+
+function formatearFecha(fecha: string | Date | null | undefined): string {
+  if (!fecha) return "Sin fecha";
+  const d = new Date(fecha);
+  if (isNaN(d.getTime())) return "Sin fecha";
+  return d.toLocaleDateString("es-CO", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatearFechaCorta(fecha: string | Date | null | undefined): string {
+  if (!fecha) return "Sin fecha";
+  const d = new Date(fecha);
+  if (isNaN(d.getTime())) return "Sin fecha";
+  return d.toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function formatCurrency(value: string | null): string {
@@ -508,6 +529,7 @@ interface AnalisisItem {
   id: string;
   resultado: any;
   tipo: string;
+  tipoDocumento: string;
   nombre: string | null;
   creadoEn: string;
 }
@@ -517,10 +539,18 @@ interface AnalisisMultiData {
   tareasPorAnalisis: Record<string, TareaIA[]>;
 }
 
+const TIPO_DOCUMENTO_OPTIONS = [
+  "Demanda",
+  "Contestación de demanda",
+  "Recurso de apelación",
+  "Alegatos de conclusión",
+  "Sentencia",
+];
+
 const TIPO_ANALISIS_LABELS: Record<string, string> = {
   demanda_principal: "Demanda principal",
-  llamamiento_garantia: "Llamamiento en garant\u00eda",
-  demanda_reconvencion: "Demanda de reconvenci\u00f3n",
+  llamamiento_garantia: "Llamamiento en garantía",
+  demanda_reconvencion: "Demanda de reconvención",
   otro: "Otro documento",
 };
 
@@ -640,9 +670,7 @@ function AnalisisIAPanel({
 
       {/* Fecha */}
       <p className="text-xs italic text-[#8B8C8E]">
-        An&aacute;lisis generado el {new Date(analisis.creadoEn).toLocaleDateString("es-CO", {
-          day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit"
-        })}
+        Análisis generado el {formatearFecha(analisis.creadoEn)}
       </p>
     </div>
   );
@@ -653,6 +681,9 @@ function AnalisisIASection({ procesoId }: { procesoId: string }) {
   const [data, setData] = useState<AnalisisMultiData | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeAnalisisIdx, setActiveAnalisisIdx] = useState(0);
+  const [showTipoSelector, setShowTipoSelector] = useState(false);
+  const [tipoDocCustom, setTipoDocCustom] = useState("");
+  const [selectedTipoDoc, setSelectedTipoDoc] = useState("");
 
   useEffect(() => {
     async function fetchAnalisis() {
@@ -703,6 +734,27 @@ function AnalisisIASection({ procesoId }: { procesoId: string }) {
     }
   };
 
+  const handleNuevoAnalisis = () => {
+    setShowTipoSelector(true);
+    setSelectedTipoDoc("");
+    setTipoDocCustom("");
+  };
+
+  const handleConfirmTipo = () => {
+    const tipoDoc = selectedTipoDoc === "Otro" ? tipoDocCustom.trim() : selectedTipoDoc;
+    if (!tipoDoc) return;
+    const params = new URLSearchParams({ procesoId, tipoDocumento: tipoDoc });
+    router.push(`/ai/extraer?${params}`);
+  };
+
+  const formatAnalisisLabel = (a: AnalisisItem) => {
+    const tipoLabel = a.tipoDocumento && a.tipoDocumento !== "Demanda"
+      ? a.tipoDocumento
+      : a.nombre || TIPO_ANALISIS_LABELS[a.tipo] || "Demanda";
+    const fecha = formatearFechaCorta(a.creadoEn);
+    return { tipoLabel, fecha };
+  };
+
   if (loading) {
     return (
       <div className="animate-pulse space-y-4">
@@ -720,14 +772,52 @@ function AnalisisIASection({ procesoId }: { procesoId: string }) {
     return (
       <div className="flex flex-col items-center justify-center py-16">
         <Sparkles className="mb-3 h-10 w-10 text-[#8B8C8E]" />
-        <p className="text-sm font-medium text-[#060606]">No hay an&aacute;lisis IA para este proceso</p>
-        <p className="mt-1 text-xs text-[#8B8C8E]">Analiza una demanda para generar la ficha t&eacute;cnica autom&aacute;ticamente</p>
+        <p className="text-sm font-medium text-[#060606]">No hay análisis IA para este proceso</p>
+        <p className="mt-1 text-xs text-[#8B8C8E]">Analiza un documento para generar la ficha técnica automáticamente</p>
         <button
-          onClick={() => router.push(`/ai/extraer?procesoId=${procesoId}`)}
+          onClick={handleNuevoAnalisis}
           className="mt-4 flex items-center gap-2 rounded-sm bg-[#008080] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#006666]"
         >
-          <Sparkles className="h-4 w-4" /> Analizar demanda
+          <Plus className="h-4 w-4" /> Nuevo análisis
         </button>
+
+        {showTipoSelector && (
+          <div className="mt-4 w-full max-w-sm rounded-sm border border-[#E8E9EA] bg-white p-4 shadow-sm">
+            <p className="mb-3 text-xs font-medium uppercase tracking-wide text-[#8B8C8E]">
+              ¿Qué documento vas a analizar?
+            </p>
+            <div className="space-y-1.5">
+              {TIPO_DOCUMENTO_OPTIONS.map((opt) => (
+                <label key={opt} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-[#060606] hover:bg-[#F5F5F5]">
+                  <input type="radio" name="tipoDoc" checked={selectedTipoDoc === opt} onChange={() => setSelectedTipoDoc(opt)} className="h-3.5 w-3.5 text-[#008080] focus:ring-[#008080]" />
+                  {opt}
+                </label>
+              ))}
+              <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-[#060606] hover:bg-[#F5F5F5]">
+                <input type="radio" name="tipoDoc" checked={selectedTipoDoc === "Otro"} onChange={() => setSelectedTipoDoc("Otro")} className="h-3.5 w-3.5 text-[#008080] focus:ring-[#008080]" />
+                Otro
+              </label>
+              {selectedTipoDoc === "Otro" && (
+                <input
+                  value={tipoDocCustom}
+                  onChange={(e) => setTipoDocCustom(e.target.value)}
+                  placeholder="Describe el documento..."
+                  className="mt-1 w-full rounded-sm border border-[#E8E9EA] px-3 py-1.5 text-sm focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+                />
+              )}
+            </div>
+            <div className="mt-3 flex justify-end gap-2">
+              <button onClick={() => setShowTipoSelector(false)} className="rounded-sm border border-[#E8E9EA] px-3 py-1.5 text-xs text-[#060606] hover:bg-[#FAFBFC]">Cancelar</button>
+              <button
+                onClick={handleConfirmTipo}
+                disabled={!selectedTipoDoc || (selectedTipoDoc === "Otro" && !tipoDocCustom.trim())}
+                className="rounded-sm bg-[#008080] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#006666] disabled:opacity-50"
+              >
+                Continuar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -739,39 +829,88 @@ function AnalisisIASection({ procesoId }: { procesoId: string }) {
   return (
     <div className="space-y-4">
       {/* Header with new analysis button */}
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end relative">
         <button
-          onClick={() => router.push(`/ai/extraer?procesoId=${procesoId}`)}
+          onClick={handleNuevoAnalisis}
           className="flex items-center gap-1 rounded-md border border-[#008080] bg-transparent px-3 py-1.5 text-sm text-[#008080] transition-colors hover:bg-[#008080]/10"
         >
-          <Plus className="h-3.5 w-3.5" /> Nuevo an&aacute;lisis
+          <Plus className="h-3.5 w-3.5" /> Nuevo análisis
         </button>
+
+        {showTipoSelector && (
+          <div className="absolute right-0 top-full z-20 mt-1 w-72 rounded-sm border border-[#E8E9EA] bg-white p-4 shadow-lg">
+            <p className="mb-3 text-xs font-medium uppercase tracking-wide text-[#8B8C8E]">
+              ¿Qué documento vas a analizar?
+            </p>
+            <div className="space-y-1.5">
+              {TIPO_DOCUMENTO_OPTIONS.map((opt) => (
+                <label key={opt} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-[#060606] hover:bg-[#F5F5F5]">
+                  <input type="radio" name="tipoDocNuevo" checked={selectedTipoDoc === opt} onChange={() => setSelectedTipoDoc(opt)} className="h-3.5 w-3.5 text-[#008080] focus:ring-[#008080]" />
+                  {opt}
+                </label>
+              ))}
+              <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-[#060606] hover:bg-[#F5F5F5]">
+                <input type="radio" name="tipoDocNuevo" checked={selectedTipoDoc === "Otro"} onChange={() => setSelectedTipoDoc("Otro")} className="h-3.5 w-3.5 text-[#008080] focus:ring-[#008080]" />
+                Otro
+              </label>
+              {selectedTipoDoc === "Otro" && (
+                <input
+                  value={tipoDocCustom}
+                  onChange={(e) => setTipoDocCustom(e.target.value)}
+                  placeholder="Describe el documento..."
+                  className="mt-1 w-full rounded-sm border border-[#E8E9EA] px-3 py-1.5 text-sm focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+                />
+              )}
+            </div>
+            <div className="mt-3 flex justify-end gap-2">
+              <button onClick={() => setShowTipoSelector(false)} className="rounded-sm border border-[#E8E9EA] px-3 py-1.5 text-xs text-[#060606] hover:bg-[#FAFBFC]">Cancelar</button>
+              <button
+                onClick={handleConfirmTipo}
+                disabled={!selectedTipoDoc || (selectedTipoDoc === "Otro" && !tipoDocCustom.trim())}
+                className="rounded-sm bg-[#008080] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#006666] disabled:opacity-50"
+              >
+                Continuar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Sub-tabs if multiple analyses */}
+      {/* Sub-tabs if multiple analyses — show tipo + date */}
       {analisisList.length > 1 && (
-        <div className="flex gap-0 border-b border-[#E8E9EA]">
-          {analisisList.map((a, idx) => (
-            <button
-              key={a.id}
-              onClick={() => setActiveAnalisisIdx(idx)}
-              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors ${
-                idx === activeAnalisisIdx
-                  ? "border-[#008080] text-[#008080] font-medium"
-                  : "border-transparent text-[#8B8C8E] hover:text-[#060606]"
-              }`}
-            >
-              <FileText className="h-3.5 w-3.5" />
-              {a.nombre || TIPO_ANALISIS_LABELS[a.tipo] || a.tipo}
-              <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                idx === activeAnalisisIdx ? "bg-[#e0f2f2] text-[#008080]" : "bg-[#f3f4f6] text-[#8B8C8E]"
-              }`}>
-                {TIPO_ANALISIS_LABELS[a.tipo]?.split(" ")[0] || a.tipo}
-              </span>
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-0 border-b border-[#E8E9EA]">
+          {analisisList.map((a, idx) => {
+            const { tipoLabel, fecha } = formatAnalisisLabel(a);
+            return (
+              <button
+                key={a.id}
+                onClick={() => setActiveAnalisisIdx(idx)}
+                className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors ${
+                  idx === activeAnalisisIdx
+                    ? "border-[#008080] text-[#008080] font-medium"
+                    : "border-transparent text-[#8B8C8E] hover:text-[#060606]"
+                }`}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                <span>{tipoLabel}</span>
+                <span className={`text-[10px] ${idx === activeAnalisisIdx ? "text-[#008080]/70" : "text-[#8B8C8E]"}`}>
+                  · {fecha}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
+
+      {/* Active analysis header */}
+      {analisisList.length === 1 && (() => {
+        const { tipoLabel, fecha } = formatAnalisisLabel(analisisList[0]);
+        return (
+          <p className="text-xs text-[#8B8C8E]">
+            Análisis — {tipoLabel} · {fecha}
+          </p>
+        );
+      })()}
 
       <AnalisisIAPanel
         key={activeAnalisis.id}
@@ -783,50 +922,83 @@ function AnalisisIASection({ procesoId }: { procesoId: string }) {
   );
 }
 
+interface AnotacionItem {
+  id: string;
+  contenido: string;
+  creadoEn: string;
+}
+
 function AnotacionPanel({ procesoId }: { procesoId: string }) {
-  const storageKey = `anotacion-${procesoId}`;
-  const [anotacion, setAnotacion] = useState<string | null>(null);
+  const [anotaciones, setAnotaciones] = useState<AnotacionItem[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [texto, setTexto] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) setAnotacion(saved);
-  }, [storageKey]);
+    fetch(`/api/procesos/${procesoId}/anotaciones`)
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setAnotaciones(data); })
+      .catch(() => {});
+  }, [procesoId]);
 
-  const handleGuardar = () => {
-    if (!texto.trim()) return;
-    localStorage.setItem(storageKey, texto.trim());
-    setAnotacion(texto.trim());
-    setShowForm(false);
-    setEditing(false);
-    setTexto("");
+  const handleGuardar = async () => {
+    if (!texto.trim() || saving) return;
+    setSaving(true);
+    try {
+      if (editingId) {
+        const res = await fetch(`/api/procesos/${procesoId}/anotaciones/${editingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contenido: texto.trim() }),
+        });
+        const updated = await res.json();
+        setAnotaciones((prev) => prev.map((a) => (a.id === editingId ? updated : a)));
+      } else {
+        const res = await fetch(`/api/procesos/${procesoId}/anotaciones`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contenido: texto.trim() }),
+        });
+        const created = await res.json();
+        setAnotaciones((prev) => [created, ...prev]);
+      }
+      setShowForm(false);
+      setEditingId(null);
+      setTexto("");
+    } catch (err) {
+      console.error("Error guardando anotación:", err);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleEditar = () => {
-    setTexto(anotacion || "");
-    setEditing(true);
+  const handleEditar = (a: AnotacionItem) => {
+    setTexto(a.contenido);
+    setEditingId(a.id);
     setShowForm(true);
   };
 
-  const handleEliminar = () => {
-    localStorage.removeItem(storageKey);
-    setAnotacion(null);
+  const handleEliminar = async (id: string) => {
+    try {
+      await fetch(`/api/procesos/${procesoId}/anotaciones/${id}`, { method: "DELETE" });
+      setAnotaciones((prev) => prev.filter((a) => a.id !== id));
+    } catch (err) {
+      console.error("Error eliminando anotación:", err);
+    }
   };
 
   const handleCancelar = () => {
     setShowForm(false);
-    setEditing(false);
+    setEditingId(null);
     setTexto("");
   };
 
   return (
     <div className="space-y-3">
-      {/* Botón Nueva anotación */}
       {!showForm && (
         <button
-          onClick={() => { setTexto(""); setShowForm(true); setEditing(false); }}
+          onClick={() => { setTexto(""); setEditingId(null); setShowForm(true); }}
           className="flex w-full items-center gap-3 rounded-sm border border-[#E8E9EA] bg-white px-4 py-2.5 text-left text-sm font-medium text-[#060606] transition-colors hover:border-[#008080] hover:text-[#008080]"
         >
           <StickyNote className="h-4 w-4" />
@@ -834,7 +1006,6 @@ function AnotacionPanel({ procesoId }: { procesoId: string }) {
         </button>
       )}
 
-      {/* Formulario inline */}
       {showForm && (
         <div className="rounded-sm border border-[#008080]/30 bg-[#FAFBFC] p-4">
           <textarea
@@ -856,36 +1027,37 @@ function AnotacionPanel({ procesoId }: { procesoId: string }) {
               </button>
               <button
                 onClick={handleGuardar}
-                disabled={!texto.trim()}
+                disabled={!texto.trim() || saving}
                 className="rounded-sm bg-[#008080] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#006666] disabled:opacity-50"
               >
-                Guardar anotación
+                {saving ? "Guardando..." : editingId ? "Actualizar" : "Guardar anotación"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Anotación guardada */}
-      {anotacion && !showForm && (
-        <div className="rounded-sm border border-amber-200 bg-amber-50 p-4">
+      {anotaciones.map((a) => (
+        <div key={a.id} className="rounded-sm border border-amber-200 bg-amber-50 p-4">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <StickyNote className="h-3.5 w-3.5 text-amber-600" />
-              <span className="text-[11px] font-medium uppercase tracking-wide text-amber-700">Anotación</span>
+              <span className="text-[11px] font-medium text-amber-700">
+                {formatearFecha(a.creadoEn)}
+              </span>
             </div>
             <div className="flex gap-1">
-              <button onClick={handleEditar} className="rounded-sm p-1 text-amber-600 hover:bg-amber-100" title="Editar">
+              <button onClick={() => handleEditar(a)} className="rounded-sm p-1 text-amber-600 hover:bg-amber-100" title="Editar">
                 <Pencil className="h-3.5 w-3.5" />
               </button>
-              <button onClick={handleEliminar} className="rounded-sm p-1 text-amber-600 hover:bg-red-100 hover:text-red-600" title="Eliminar">
+              <button onClick={() => handleEliminar(a.id)} className="rounded-sm p-1 text-amber-600 hover:bg-red-100 hover:text-red-600" title="Eliminar">
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
-          <p className="text-sm leading-relaxed text-[#060606] whitespace-pre-wrap">{anotacion}</p>
+          <p className="text-sm leading-relaxed text-[#060606] whitespace-pre-wrap">{a.contenido}</p>
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -963,6 +1135,138 @@ function EstadoSelector({ procesoId, estadoActual, onUpdate }: { procesoId: stri
   );
 }
 
+// ── Abogado Líder Selector ─────────────────────────────────
+
+interface AbogadoOption {
+  id: string;
+  nombre: string;
+  rol: string;
+  especialidad: string | null;
+}
+
+function AbogadoLiderSelector({
+  procesoId,
+  abogadoLider,
+  onUpdate,
+}: {
+  procesoId: string;
+  abogadoLider: ProcesoDetail["asignaciones"][number] | undefined;
+  onUpdate: (asignacion: ProcesoDetail["asignaciones"][number] | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [abogados, setAbogados] = useState<AbogadoOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const fetchAbogados = async () => {
+    if (abogados.length > 0) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/abogados");
+      const data = await res.json();
+      setAbogados(Array.isArray(data) ? data : []);
+    } catch {
+      setAbogados([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpen = () => {
+    setOpen(!open);
+    if (!open) fetchAbogados();
+  };
+
+  const selectAbogado = async (abogado: AbogadoOption) => {
+    setOpen(false);
+    try {
+      await fetch(`/api/procesos/${procesoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ abogadoLiderId: abogado.id }),
+      });
+      onUpdate({
+        id: `asig-${abogado.id}`,
+        abogadoId: abogado.id,
+        rolEnCaso: "LIDER",
+        fechaAsignacion: new Date(),
+        activa: true,
+        abogado: {
+          nombre: abogado.nombre,
+          rol: abogado.rol,
+          especialidad: abogado.especialidad,
+        },
+      });
+    } catch (err) {
+      console.error("Error asignando abogado líder:", err);
+    }
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <p className="text-xs font-medium uppercase tracking-wide text-[#8B8C8E]">
+        Abogado Líder
+      </p>
+      <button
+        onClick={handleOpen}
+        className="mt-1 flex w-full items-center gap-2 rounded-sm px-1 py-0.5 text-left transition-colors hover:bg-[#F5F5F5]"
+      >
+        <User className="h-4 w-4 text-[#8B8C8E]" />
+        {abogadoLider ? (
+          <div>
+            <p className="text-sm font-medium text-[#060606]">
+              {abogadoLider.abogado.nombre}
+            </p>
+            <p className="text-xs text-[#8B8C8E]">
+              {abogadoLider.abogado.rol.replace(/_/g, " ")}
+              {abogadoLider.abogado.especialidad &&
+                ` · ${abogadoLider.abogado.especialidad.replace(/_/g, " ")}`}
+            </p>
+          </div>
+        ) : (
+          <span className="text-sm text-[#8B8C8E]">Sin asignar</span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-full max-h-[180px] overflow-y-auto rounded-sm border border-[#E8E9EA] bg-white shadow-sm">
+          {loading ? (
+            <div className="flex items-center justify-center py-3">
+              <Loader2 className="h-4 w-4 animate-spin text-[#8B8C8E]" />
+            </div>
+          ) : abogados.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-[#8B8C8E]">No hay abogados disponibles</p>
+          ) : (
+            abogados.map((a) => (
+              <button
+                key={a.id}
+                onClick={() => selectAbogado(a)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[#060606] transition-colors hover:bg-gray-50"
+              >
+                <User className="h-3.5 w-3.5 text-[#8B8C8E]" />
+                <div>
+                  <span className="font-medium">{a.nombre}</span>
+                  <span className="ml-1.5 text-xs text-[#8B8C8E]">
+                    · {a.rol.charAt(0) + a.rol.slice(1).toLowerCase().replace(/_/g, " ")}
+                  </span>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface ClienteAsignado {
   id: string;
   nombre: string;
@@ -971,13 +1275,12 @@ interface ClienteAsignado {
   plantillaInforme: string;
 }
 
-const PLANTILLAS_CON_TIPO = ["ZURICH", "SURA", "HDI", "MUNDIAL", "CHUBB", "SEGUROS_DEL_ESTADO"];
+const PLANTILLAS_CON_TIPO = ["ZURICH"];
+const PLANTILLAS_DISPONIBLES = ["ZURICH", "HDI", "MUNDIAL", "GENERAL"];
 
 function getReportEndpoint(plantilla: string, formato: "pdf" | "docx") {
-  // All non-GENERAL templates use zurich endpoint as placeholder for now
-  if (plantilla !== "GENERAL") {
-    return `/api/reportes/zurich/${formato}`;
-  }
+  if (plantilla === "HDI") return `/api/reportes/hdi/${formato}`;
+  if (plantilla === "MUNDIAL") return `/api/reportes/mundial/${formato}`;
   return `/api/reportes/zurich/${formato}`;
 }
 
@@ -1132,25 +1435,31 @@ function InformeButton({ procesoId, clientes }: { procesoId: string; clientes: C
                 </div>
               )}
 
-              {/* Format buttons */}
-              <div className="px-1 py-1">
-                <button
-                  disabled={generating !== null}
-                  onClick={() => download("pdf")}
-                  className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm text-[#060606] hover:bg-[#F5F5F5] disabled:opacity-50"
-                >
-                  {generating === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4 text-red-500" />}
-                  {generating === "pdf" ? "Generando..." : "Descargar PDF"}
-                </button>
-                <button
-                  disabled={generating !== null}
-                  onClick={() => download("docx")}
-                  className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm text-[#060606] hover:bg-[#F5F5F5] disabled:opacity-50"
-                >
-                  {generating === "docx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4 text-blue-500" />}
-                  {generating === "docx" ? "Generando..." : "Descargar Word"}
-                </button>
-              </div>
+              {/* Format buttons or placeholder */}
+              {PLANTILLAS_DISPONIBLES.includes(activeCliente?.plantillaInforme ?? "GENERAL") ? (
+                <div className="px-1 py-1">
+                  <button
+                    disabled={generating !== null}
+                    onClick={() => download("pdf")}
+                    className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm text-[#060606] hover:bg-[#F5F5F5] disabled:opacity-50"
+                  >
+                    {generating === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4 text-red-500" />}
+                    {generating === "pdf" ? "Generando..." : "Descargar PDF"}
+                  </button>
+                  <button
+                    disabled={generating !== null}
+                    onClick={() => download("docx")}
+                    className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm text-[#060606] hover:bg-[#F5F5F5] disabled:opacity-50"
+                  >
+                    {generating === "docx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4 text-blue-500" />}
+                    {generating === "docx" ? "Generando..." : "Descargar Word"}
+                  </button>
+                </div>
+              ) : (
+                <div className="px-4 py-3 text-center text-sm text-[#8B8C8E]">
+                  Template en desarrollo — Proximamente
+                </div>
+              )}
             </>
           )}
 
@@ -1400,6 +1709,8 @@ export default function ProcesoDetailPage() {
   const [error, setError] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [clientesAsignados, setClientesAsignados] = useState<ClienteAsignado[]>([]);
+  const [modalEliminar, setModalEliminar] = useState<"cerrado" | "paso1" | "paso2">("cerrado");
+  const [inputConfirmacion, setInputConfirmacion] = useState("");
 
   const tabParam = searchParams.get('tab');
   const initialTab = tabParam === 'analisis' ? 'analisis-ia' as const
@@ -1500,6 +1811,13 @@ export default function ProcesoDetailPage() {
             className="rounded-sm border border-[#060606] bg-white px-4 py-2 text-sm font-medium text-[#060606] transition-colors hover:bg-[#060606] hover:text-white"
           >
             Editar
+          </button>
+          <button
+            onClick={() => { setModalEliminar("paso1"); setInputConfirmacion(""); }}
+            className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-500 transition-colors hover:bg-red-50"
+          >
+            <Trash2 className="h-4 w-4" />
+            Eliminar
           </button>
         </div>
       </div>
@@ -1616,25 +1934,15 @@ export default function ProcesoDetailPage() {
               <div className="border-t border-[#E8E9EA]" />
 
               {/* Abogado Líder */}
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-[#8B8C8E]">
-                  Abogado Líder
-                </p>
-                {abogadoLider ? (
-                  <>
-                    <p className="mt-1 text-sm font-medium text-[#060606]">
-                      {abogadoLider.abogado.nombre}
-                    </p>
-                    <p className="mt-0.5 text-xs text-[#8B8C8E]">
-                      {abogadoLider.abogado.rol.replace(/_/g, " ")}
-                      {abogadoLider.abogado.especialidad &&
-                        ` · ${abogadoLider.abogado.especialidad.replace(/_/g, " ")}`}
-                    </p>
-                  </>
-                ) : (
-                  <p className="mt-1 text-sm text-[#8B8C8E]">Sin asignar</p>
-                )}
-              </div>
+              <AbogadoLiderSelector
+                procesoId={id}
+                abogadoLider={abogadoLider}
+                onUpdate={(asignacion) => setProceso((p) => {
+                  if (!p) return p;
+                  const otras = p.asignaciones.filter((a) => !(a.rolEnCaso === "LIDER" && a.activa));
+                  return { ...p, asignaciones: asignacion ? [...otras, asignacion] : otras };
+                })}
+              />
 
               {/* Other assignments */}
               {otrasAsignaciones.length > 0 && (
@@ -1662,30 +1970,103 @@ export default function ProcesoDetailPage() {
             </div>
           </div>
 
-          {/* Card: Acciones Rápidas */}
-          <div className="rounded-sm border border-[#E8E9EA] bg-white p-6">
-            <SectionTitle title="Acciones Rápidas" />
-            <div className="space-y-2">
-              {[
-                { icon: ClipboardList, label: "Registrar Hito" },
-                { icon: Paperclip, label: "Adjuntar Documento" },
-                { icon: FileText, label: "Generar Informe" },
-              ].map(({ icon: Icon, label }) => (
-                <button
-                  key={label}
-                  className="flex w-full items-center gap-3 rounded-sm border border-[#E8E9EA] bg-white px-4 py-2.5 text-left text-sm font-medium text-[#060606] transition-colors hover:border-[#008080] hover:text-[#008080]"
-                >
-                  <Icon className="h-4 w-4" />
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Card: Anotación */}
           <AnotacionPanel procesoId={id} />
         </div>
       </div>
+      )}
+
+      {/* Modal Eliminar Proceso */}
+      {modalEliminar !== "cerrado" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            {modalEliminar === "paso1" ? (
+              <>
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+                  <AlertTriangle className="h-6 w-6 text-red-500" />
+                </div>
+                <h3 className="mb-2 text-center text-lg font-semibold text-[#060606]">
+                  ¿Eliminar este proceso?
+                </h3>
+                <p className="mb-4 text-center text-sm text-[#8B8C8E]">
+                  Esta acción no se puede deshacer. Se eliminarán todos los hitos, anotaciones y documentos asociados.
+                </p>
+                <div className="mb-6 flex justify-center">
+                  <span className="rounded bg-[#F5F5F5] px-3 py-1 font-mono text-sm text-[#060606]">
+                    {proceso.radicado}
+                  </span>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setModalEliminar("cerrado")}
+                    className="flex-1 rounded-lg border border-[#E8E9EA] px-4 py-2.5 text-sm font-medium text-[#060606] transition-colors hover:bg-[#FAFBFC]"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => setModalEliminar("paso2")}
+                    className="flex-1 rounded-lg bg-red-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-600"
+                  >
+                    Continuar →
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+                  <Trash2 className="h-6 w-6 text-red-500" />
+                </div>
+                <h3 className="mb-2 text-center text-lg font-semibold text-[#060606]">
+                  Confirma la eliminación
+                </h3>
+                <p className="mb-4 text-center text-sm text-red-500">
+                  Escribe el radicado del proceso para confirmar:
+                </p>
+                <div className="mb-2 flex justify-center">
+                  <span className="rounded bg-[#F5F5F5] px-3 py-1 font-mono text-xs text-[#8B8C8E]">
+                    {proceso.radicado}
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={inputConfirmacion}
+                  onChange={(e) => setInputConfirmacion(e.target.value)}
+                  placeholder="Escribe el radicado aquí..."
+                  className="mb-4 w-full rounded-lg border border-[#E8E9EA] px-3 py-2.5 font-mono text-sm text-[#060606] placeholder:text-[#8B8C8E] focus:border-red-300 focus:outline-none focus:ring-1 focus:ring-red-300"
+                />
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setModalEliminar("paso1"); setInputConfirmacion(""); }}
+                    className="flex-1 rounded-lg border border-[#E8E9EA] px-4 py-2.5 text-sm font-medium text-[#060606] transition-colors hover:bg-[#FAFBFC]"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    disabled={inputConfirmacion !== proceso.radicado}
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`/api/procesos/${id}`, { method: "DELETE" });
+                        const data = await res.json();
+                        if (data.ok) {
+                          router.push("/procesos");
+                        } else {
+                          alert(data.error || "Error al eliminar el proceso");
+                          setModalEliminar("cerrado");
+                        }
+                      } catch {
+                        alert("Error de conexión al eliminar el proceso");
+                        setModalEliminar("cerrado");
+                      }
+                    }}
+                    className="flex-1 rounded-lg bg-red-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Eliminar definitivamente
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Chat IA - Backdrop */}

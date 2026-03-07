@@ -72,6 +72,7 @@ export default function ExtraerDemandaPage() {
   const searchParams = useSearchParams();
   const yaGuardado = searchParams.get('guardado') === 'true';
   const procesoIdGuardado = searchParams.get('procesoId');
+  const tipoDocumentoParam = searchParams.get('tipoDocumento') || 'Demanda';
   const estaVinculado = !!(procesoIdGuardado || yaGuardado);
   const [estado, setEstado] = useState<Estado>("idle");
   const [file, setFile] = useState<File | null>(null);
@@ -240,6 +241,7 @@ export default function ExtraerDemandaPage() {
           resultado,
           proximosPasos: resultado.estrategiaDefensa?.proximosPasos ?? [],
           tipoAnalisis,
+          tipoDocumento: tipoDocumentoParam,
           nombreAnalisis: nombreAnalisis || undefined,
           clienteId: clienteIdGuardar || undefined,
           abogadoLiderId: abogadoLiderId || undefined,
@@ -369,7 +371,7 @@ export default function ExtraerDemandaPage() {
             disabled={!calidadProcesal}
             className="flex items-center gap-2 rounded-sm bg-[#008080] px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#006666] disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Analizar demanda &rarr;
+            Analizar documento &rarr;
           </button>
         </div>
       </div>
@@ -1082,6 +1084,7 @@ export default function ExtraerDemandaPage() {
                             resultado,
                             proximosPasos: resultado?.estrategiaDefensa?.proximosPasos ?? [],
                             tipoAnalisis: 'demanda_principal',
+                            tipoDocumento: tipoDocumentoParam,
                             nombreAnalisis: nombreAnalisis || undefined,
                           }),
                         });
@@ -1189,7 +1192,7 @@ export default function ExtraerDemandaPage() {
         disabled={!file}
         className="mt-6 flex w-full items-center justify-center gap-2 rounded-sm bg-[#008080] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#006666] disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        <Sparkles className="h-4 w-4" /> Analizar demanda
+        <Sparkles className="h-4 w-4" /> Analizar documento
       </button>
 
       <p className="mt-6 text-center text-[11px] text-[#8B8C8E]">

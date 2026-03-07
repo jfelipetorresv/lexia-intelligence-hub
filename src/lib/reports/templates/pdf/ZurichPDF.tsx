@@ -43,8 +43,20 @@ const styles = StyleSheet.create({
     letterSpacing: 6,
     marginTop: 2,
   },
-  headerContact: {
-    fontSize: 7,
+  headerRight: {
+    width: "40%",
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
+  headerParaLabel: {
+    fontSize: 6,
+    color: "#8B8C8E",
+    letterSpacing: 2,
+    marginBottom: 2,
+  },
+  headerClienteName: {
+    fontSize: 9,
+    fontFamily: "Helvetica-Bold",
     color: "#FFFFFF",
     textAlign: "right",
   },
@@ -142,9 +154,10 @@ export function ZurichPDFDocument({ data }: { data: ZurichInformeData }) {
             <Text style={styles.headerLogo}>LEXIA</Text>
             <Text style={styles.headerSubtitle}>ABOGADOS</Text>
           </View>
-          <Text style={styles.headerContact}>
-            www.lexia.co | info@lexia.co | (317) 655-4145
-          </Text>
+          <View style={styles.headerRight}>
+            <Text style={styles.headerParaLabel}>PARA:</Text>
+            <Text style={styles.headerClienteName}>{data.clienteNombre}</Text>
+          </View>
         </View>
         <View style={styles.tealLine} />
 

@@ -320,6 +320,7 @@ model Proceso {
   analisisIA       AnalisisIA[]
   tareasIA         TareaIA[]
   chatMensajes     ChatMensaje[]
+  anotaciones      Anotacion[]
 
   @@map("procesos")
 }
@@ -458,6 +459,21 @@ model DocumentoLocal {
 }
 
 // ============================================================
+// ANOTACIONES
+// ============================================================
+
+model Anotacion {
+  id        String   @id @default(cuid())
+  procesoId String
+  proceso   Proceso  @relation(fields: [procesoId], references: [id], onDelete: Cascade)
+  contenido String   @db.Text
+  creadoEn  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("anotaciones")
+}
+
+// ============================================================
 // ANÁLISIS IA
 // ============================================================
 
@@ -469,6 +485,7 @@ model AnalisisIA {
   resultado     Json
   estado        String   @default("completado")
   tipo          String   @default("demanda_principal")
+  tipoDocumento String   @default("Demanda")
   nombre        String?
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt

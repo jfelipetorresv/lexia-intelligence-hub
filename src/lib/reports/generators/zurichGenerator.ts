@@ -222,6 +222,7 @@ export async function buildZurichData(
 
   // Base data from DB
   const baseData: ZurichInformeData = {
+    clienteNombre: proceso.cliente.nombre,
     tipoInforme: tipo,
     fechaInforme,
 

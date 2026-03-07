@@ -5,7 +5,7 @@ import { db } from '@/lib/db';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { procesoId, crearProceso, datosBasicos, textoExtraido, resultado, proximosPasos, tipoAnalisis, nombreAnalisis } = body;
+    const { procesoId, crearProceso, datosBasicos, textoExtraido, resultado, proximosPasos, tipoAnalisis, nombreAnalisis, tipoDocumento } = body;
 
     if (!textoExtraido || !resultado) {
       return NextResponse.json(
@@ -113,6 +113,7 @@ export async function POST(request: NextRequest) {
         resultado: resultado,
         estado: 'completado',
         tipo: tipoAnalisis || 'demanda_principal',
+        tipoDocumento: tipoDocumento || 'Demanda',
         nombre: nombreAnalisis || null,
       },
     });
