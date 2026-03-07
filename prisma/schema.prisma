@@ -308,6 +308,7 @@ model Proceso {
   calculos         CalculoFinanciero[]
   analisisIA       AnalisisIA[]
   tareasIA         TareaIA[]
+  chatMensajes     ChatMensaje[]
 
   @@map("procesos")
 }
@@ -467,6 +468,21 @@ model TareaIA {
   actualizadoEn DateTime    @updatedAt
 
   @@map("tareas_ia")
+}
+
+// ============================================================
+// CHAT IA POR EXPEDIENTE
+// ============================================================
+
+model ChatMensaje {
+  id        String   @id @default(cuid())
+  procesoId String
+  rol       String   // "user" o "assistant"
+  contenido String   @db.Text
+  creadoEn  DateTime @default(now())
+  proceso   Proceso  @relation(fields: [procesoId], references: [id], onDelete: Cascade)
+
+  @@map("chat_mensajes")
 }
 
 // ============================================================

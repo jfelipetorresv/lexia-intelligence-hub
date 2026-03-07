@@ -16,8 +16,10 @@ import {
   Sparkles,
   Check,
   ChevronDown,
+  MessageSquare,
 } from "lucide-react";
 import { DocumentosPanel } from "@/components/DocumentosPanel";
+import { ChatIAPanel } from "@/components/procesos/ChatIAPanel";
 import { EstadoBadge } from "@/components/procesos/estado-badge";
 import { SemaforoBadge } from "@/components/procesos/semaforo-badge";
 import {
@@ -783,6 +785,7 @@ export default function ProcesoDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const tabParam = searchParams.get('tab');
   const initialTab = tabParam === 'analisis' ? 'analisis-ia' as const
@@ -1096,6 +1099,24 @@ export default function ProcesoDetailPage() {
         </div>
       </div>
       )}
+
+      {/* Chat IA - Backdrop */}
+      <div
+        className={`fixed inset-0 bg-black/20 z-40 transition-opacity ${chatOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        onClick={() => setChatOpen(false)}
+      />
+
+      {/* Chat IA - Floating Button */}
+      <button
+        onClick={() => setChatOpen(!chatOpen)}
+        title="Asistente IA"
+        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#008080] text-white shadow-lg transition-colors hover:bg-[#006666]"
+      >
+        {chatOpen ? <X className="h-[22px] w-[22px]" /> : <MessageSquare className="h-[22px] w-[22px]" />}
+      </button>
+
+      {/* Chat IA - Panel */}
+      <ChatIAPanel procesoId={proceso.id} isOpen={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   );
 }

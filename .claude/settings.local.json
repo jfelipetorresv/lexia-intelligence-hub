@@ -15,7 +15,8 @@
       "Bash(npx tsc:*)",
       "Bash(netstat:*)",
       "Bash(npm list:*)",
-      "Bash(npm:*)"
+      "Bash(npm:*)",
+      "Bash(git add:*)"
     ]
   }
 }
