@@ -148,10 +148,17 @@ export async function PATCH(
       data.onedriveFolderPath = body.onedriveFolderPath;
     }
 
+    if ("estadoActual" in body) {
+      const validStates = ["TRASLADO_PREVIO", "ACTIVO", "TERMINADO"];
+      if (validStates.includes(body.estadoActual)) {
+        data.estadoActual = body.estadoActual;
+      }
+    }
+
     const proceso = await db.proceso.update({
       where: { id: params.id },
       data,
-      select: { id: true },
+      select: { id: true, estadoActual: true },
     });
 
     return NextResponse.json({ proceso });

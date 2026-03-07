@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
+import { useEffect, useState, useRef, useCallback, FormEvent } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -20,6 +20,10 @@ import {
   StickyNote,
   Trash2,
   Pencil,
+  FileDown,
+  Search,
+  ArrowLeftIcon,
+  Building2,
 } from "lucide-react";
 import { DocumentosPanel } from "@/components/DocumentosPanel";
 import { ChatIAPanel } from "@/components/procesos/ChatIAPanel";
@@ -886,6 +890,505 @@ function AnotacionPanel({ procesoId }: { procesoId: string }) {
   );
 }
 
+const ESTADO_OPTIONS: { value: string; label: string; color: string; bg: string; border: string }[] = [
+  { value: "TRASLADO_PREVIO", label: "Traslado Previo", color: "#8B8C8E", bg: "rgba(139,140,142,0.15)", border: "rgba(139,140,142,0.4)" },
+  { value: "ACTIVO", label: "Activo", color: "#16a34a", bg: "rgba(22,163,74,0.12)", border: "rgba(22,163,74,0.4)" },
+  { value: "TERMINADO", label: "Terminado", color: "#060606", bg: "rgba(6,6,6,0.08)", border: "rgba(6,6,6,0.2)" },
+];
+
+function EstadoSelector({ procesoId, estadoActual, onUpdate }: { procesoId: string; estadoActual: string; onUpdate: (estado: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const handleClickOutside = useCallback((e: MouseEvent) => {
+    if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (open) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open, handleClickOutside]);
+
+  const current = ESTADO_OPTIONS.find((o) => o.value === estadoActual) ?? ESTADO_OPTIONS[1];
+
+  const changeEstado = async (nuevoEstado: string) => {
+    if (nuevoEstado === estadoActual) { setOpen(false); return; }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/procesos/${procesoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estadoActual: nuevoEstado }),
+      });
+      if (res.ok) onUpdate(nuevoEstado);
+    } finally {
+      setSaving(false);
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="flex items-center gap-2.5">
+        <button
+          onClick={() => setOpen(!open)}
+          disabled={saving}
+          title="Cambiar estado"
+          className="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded px-4 py-1.5 text-sm font-semibold uppercase tracking-wide ring-2 ring-current/30 ring-offset-1 transition-all hover:brightness-90 disabled:opacity-50"
+          style={{ background: current.bg, color: current.color, borderColor: current.color }}
+        >
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {saving ? "Guardando..." : current.label}
+          <ChevronDown className="ml-1 h-4 w-4" />
+        </button>
+        <span className="text-xs text-gray-500">← clic para cambiar</span>
+      </div>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-44 rounded-sm border border-[#E8E9EA] bg-white shadow-lg">
+          {ESTADO_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => changeEstado(opt.value)}
+              className={`flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-[#F5F5F5] ${opt.value === estadoActual ? "font-medium" : ""}`}
+            >
+              <span className="h-2 w-2 rounded-full" style={{ background: opt.color }} />
+              {opt.label}
+              {opt.value === estadoActual && <Check className="ml-auto h-3.5 w-3.5 text-[#008080]" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ClienteAsignado {
+  id: string;
+  nombre: string;
+  nit: string | null;
+  tipo: string;
+  plantillaInforme: string;
+}
+
+const PLANTILLAS_CON_TIPO = ["ZURICH", "SURA", "HDI", "MUNDIAL", "CHUBB", "SEGUROS_DEL_ESTADO"];
+
+function getReportEndpoint(plantilla: string, formato: "pdf" | "docx") {
+  // All non-GENERAL templates use zurich endpoint as placeholder for now
+  if (plantilla !== "GENERAL") {
+    return `/api/reportes/zurich/${formato}`;
+  }
+  return `/api/reportes/zurich/${formato}`;
+}
+
+function InformeButton({ procesoId, clientes }: { procesoId: string; clientes: ClienteAsignado[] }) {
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<"cliente" | "options">("cliente");
+  const [selectedCliente, setSelectedCliente] = useState<ClienteAsignado | null>(null);
+  const [tipo, setTipo] = useState<"INICIAL" | "INTERMEDIO">("INTERMEDIO");
+  const [generating, setGenerating] = useState<"pdf" | "docx" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [extraido, setExtraido] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const handleClickOutside = useCallback((e: MouseEvent) => {
+    if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (open) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open, handleClickOutside]);
+
+  // Auto-select if single client
+  const singleCliente = clientes.length === 1 ? clientes[0] : null;
+  const activeCliente = singleCliente ?? selectedCliente;
+  const hasTipoSelector = activeCliente && PLANTILLAS_CON_TIPO.includes(activeCliente.plantillaInforme);
+
+  const buttonLabel = clientes.length === 0
+    ? "Informe General"
+    : clientes.length === 1
+      ? `Informe ${clientes[0].nombre.split(" ")[0]}`
+      : "Generar Informe";
+
+  const handleOpen = () => {
+    setOpen(!open);
+    setError(null);
+    if (clientes.length <= 1) {
+      setStep("options");
+      setSelectedCliente(singleCliente);
+    } else {
+      setStep("cliente");
+      setSelectedCliente(null);
+    }
+  };
+
+  const selectCliente = (c: ClienteAsignado) => {
+    setSelectedCliente(c);
+    setStep("options");
+  };
+
+  const download = async (formato: "pdf" | "docx") => {
+    setGenerating(formato);
+    setError(null);
+    try {
+      const plantilla = activeCliente?.plantillaInforme ?? "GENERAL";
+      const endpoint = getReportEndpoint(plantilla, formato);
+      const params = new URLSearchParams({ procesoId });
+      if (hasTipoSelector) params.set("tipo", tipo);
+      const res = await fetch(`${endpoint}?${params}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Error ${res.status}`);
+      }
+      const extraidoHeader = res.headers.get("X-Extraido-Documento");
+      if (extraidoHeader === "true") setExtraido(true);
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const defaultName = `informe-${(activeCliente?.nombre ?? "general").toLowerCase().replace(/\s+/g, "-")}.${formato}`;
+      a.download = res.headers.get("Content-Disposition")?.match(/filename="(.+)"/)?.[1] || defaultName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al generar");
+    } finally {
+      setGenerating(null);
+    }
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="flex items-center gap-1.5">
+        {extraido && (
+          <span className="text-[10px] font-medium text-[#008080]">
+            ✦ Auto-completado con IA
+          </span>
+        )}
+        <button
+          onClick={handleOpen}
+          className="flex items-center gap-1.5 rounded-sm bg-[#008080] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#006666]"
+        >
+          <FileDown className="h-4 w-4" />
+          {buttonLabel}
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+      </div>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1 w-64 rounded-sm border border-[#E8E9EA] bg-white shadow-lg">
+          {/* Step 1: Client selector (only for multiple clients) */}
+          {step === "cliente" && clientes.length > 1 && (
+            <div className="px-1 py-1">
+              <p className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-[#8B8C8E]">
+                Selecciona el cliente
+              </p>
+              {clientes.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => selectCliente(c)}
+                  className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm text-[#060606] hover:bg-[#F5F5F5]"
+                >
+                  <Building2 className="h-4 w-4 text-[#8B8C8E]" />
+                  <span className="truncate">{c.nombre}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Step 2: Options */}
+          {step === "options" && (
+            <>
+              {/* Back button for multi-client */}
+              {clientes.length > 1 && (
+                <div className="border-b border-[#E8E9EA] px-2 py-1">
+                  <button
+                    onClick={() => { setStep("cliente"); setSelectedCliente(null); }}
+                    className="flex items-center gap-1.5 rounded-sm px-2 py-1.5 text-xs text-[#8B8C8E] hover:text-[#060606]"
+                  >
+                    <ArrowLeftIcon className="h-3 w-3" />
+                    Volver — {activeCliente?.nombre}
+                  </button>
+                </div>
+              )}
+
+              {/* Tipo selector (for templates that support it) */}
+              {hasTipoSelector && (
+                <div className="border-b border-[#E8E9EA] px-4 py-2.5">
+                  <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-[#8B8C8E]">
+                    Tipo de informe
+                  </p>
+                  <label className="flex cursor-pointer items-center gap-2 py-0.5 text-sm text-[#060606]">
+                    <input type="radio" name="tipo" checked={tipo === "INICIAL"} onChange={() => setTipo("INICIAL")} className="h-3.5 w-3.5 text-[#008080] focus:ring-[#008080]" />
+                    Informe Inicial
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 py-0.5 text-sm text-[#060606]">
+                    <input type="radio" name="tipo" checked={tipo === "INTERMEDIO"} onChange={() => setTipo("INTERMEDIO")} className="h-3.5 w-3.5 text-[#008080] focus:ring-[#008080]" />
+                    Informe Intermedio
+                  </label>
+                </div>
+              )}
+
+              {/* Format buttons */}
+              <div className="px-1 py-1">
+                <button
+                  disabled={generating !== null}
+                  onClick={() => download("pdf")}
+                  className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm text-[#060606] hover:bg-[#F5F5F5] disabled:opacity-50"
+                >
+                  {generating === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4 text-red-500" />}
+                  {generating === "pdf" ? "Generando..." : "Descargar PDF"}
+                </button>
+                <button
+                  disabled={generating !== null}
+                  onClick={() => download("docx")}
+                  className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm text-[#060606] hover:bg-[#F5F5F5] disabled:opacity-50"
+                >
+                  {generating === "docx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4 text-blue-500" />}
+                  {generating === "docx" ? "Generando..." : "Descargar Word"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {error && (
+            <div className="border-t border-[#E8E9EA] px-4 py-2 text-xs text-red-600">
+              {error}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClientesAsignados({ procesoId, onClientesChange }: { procesoId: string; onClientesChange: (c: ClienteAsignado[]) => void }) {
+  const [clientes, setClientes] = useState<ClienteAsignado[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [mostrarDropdown, setMostrarDropdown] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
+  const [resultados, setResultados] = useState<ClienteAsignado[]>([]);
+  const [cargando, setCargando] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const clientesRef = useRef<ClienteAsignado[]>([]);
+
+  // Keep ref in sync so fetch functions always see latest assigned clients
+  clientesRef.current = clientes;
+
+  // 1. Load assigned clients on mount
+  const cargarAsignados = async () => {
+    try {
+      const res = await fetch(`/api/procesos/${procesoId}/clientes`);
+      if (res.ok) {
+        const data = await res.json();
+        setClientes(data);
+        clientesRef.current = data;
+        onClientesChange(data);
+      }
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { cargarAsignados(); }, [procesoId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Imperative fetch — no useCallback, no stale closures
+  const cargarClientes = async (texto: string) => {
+    const url = `/api/clientes?search=${encodeURIComponent(texto)}`;
+    console.log('🔍 Fetching clientes con search:', texto);
+    console.log("[ClientesAsignados] Fetching:", url);
+    setCargando(true);
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      console.log('✅ Clientes recibidos:', data);
+      console.log("[ClientesAsignados] Resultado:", data.length, "clientes");
+      const asignadosIds = new Set(clientesRef.current.map((c) => c.id));
+      setResultados(Array.isArray(data) ? data.filter((c: ClienteAsignado) => !asignadosIds.has(c.id)) : []);
+    } catch (e) {
+      console.error("[ClientesAsignados] Error:", e);
+      setResultados([]);
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  // When dropdown opens → fetch immediately
+  const abrirDropdown = () => {
+    setMostrarDropdown(true);
+    setBusqueda("");
+    setResultados([]);
+    cargarClientes("");
+  };
+
+  // When user types → debounced fetch
+  useEffect(() => {
+    if (!mostrarDropdown || busqueda === "") return;
+    const timer = setTimeout(() => cargarClientes(busqueda), 300);
+    return () => clearTimeout(timer);
+  }, [busqueda]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Close on click outside
+  useEffect(() => {
+    if (!mostrarDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setMostrarDropdown(false);
+        setBusqueda("");
+        setResultados([]);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [mostrarDropdown]);
+
+  // Auto-focus input
+  useEffect(() => {
+    if (mostrarDropdown && inputRef.current) inputRef.current.focus();
+  }, [mostrarDropdown]);
+
+  // 5. Add client
+  const agregarCliente = async (clienteId: string) => {
+    await fetch(`/api/procesos/${procesoId}/clientes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clienteId }),
+    });
+    setMostrarDropdown(false);
+    setBusqueda("");
+    setResultados([]);
+    cargarAsignados();
+  };
+
+  // 6. Remove client
+  const quitarCliente = async (clienteId: string) => {
+    await fetch(`/api/procesos/${procesoId}/clientes`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clienteId }),
+    });
+    cargarAsignados();
+  };
+
+  if (loading) {
+    return (
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-[#8B8C8E]">Clientes Asignados</p>
+        <div className="mt-2 h-6 w-32 animate-pulse rounded bg-[#E8E9EA]" />
+      </div>
+    );
+  }
+
+  const displayClientes = showAll ? clientes : clientes.slice(0, 3);
+  const hiddenCount = clientes.length - 3;
+
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase tracking-wide text-[#8B8C8E]">
+        Clientes Asignados
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {displayClientes.map((c) => (
+          <span
+            key={c.id}
+            className="inline-flex items-center gap-1 rounded-sm bg-[#F5F5F5] px-2 py-1 text-xs font-medium text-[#060606]"
+          >
+            {c.nombre.length > 25 ? c.nombre.slice(0, 25) + "…" : c.nombre}
+            <button
+              onClick={() => quitarCliente(c.id)}
+              className="ml-0.5 text-[#8B8C8E] hover:text-red-500"
+              title="Desvincular cliente"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
+        {!showAll && hiddenCount > 0 && (
+          <button
+            onClick={() => setShowAll(true)}
+            className="rounded-sm bg-[#E8E9EA] px-2 py-1 text-xs font-medium text-[#8B8C8E] hover:text-[#060606]"
+          >
+            +{hiddenCount} más
+          </button>
+        )}
+        {showAll && clientes.length > 3 && (
+          <button
+            onClick={() => setShowAll(false)}
+            className="rounded-sm bg-[#E8E9EA] px-2 py-1 text-xs font-medium text-[#8B8C8E] hover:text-[#060606]"
+          >
+            Ver menos
+          </button>
+        )}
+      </div>
+
+      {/* Add client dropdown */}
+      <div ref={dropdownRef} className="relative mt-2">
+        {!mostrarDropdown ? (
+          <button
+            onClick={abrirDropdown}
+            className="flex items-center gap-1.5 text-xs font-medium text-[#008080] hover:underline"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Agregar cliente
+          </button>
+        ) : (
+          <div>
+            <div className="flex items-center gap-1.5 rounded-sm border border-[#008080] bg-white px-2 py-1.5">
+              <Search className="h-3.5 w-3.5 text-[#8B8C8E]" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={busqueda}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setBusqueda(val);
+                  if (val === "") cargarClientes("");
+                }}
+                placeholder="Buscar cliente..."
+                className="flex-1 bg-transparent text-xs text-[#060606] outline-none placeholder:text-[#8B8C8E]"
+              />
+              {cargando && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#8B8C8E]" />}
+            </div>
+            <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-[200px] overflow-y-auto rounded-sm border border-[#E8E9EA] bg-white shadow-lg">
+              {cargando && resultados.length === 0 && (
+                <div className="flex items-center justify-center px-3 py-3">
+                  <Loader2 className="h-4 w-4 animate-spin text-[#8B8C8E]" />
+                </div>
+              )}
+              {resultados.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => agregarCliente(c.id)}
+                  className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-xs text-[#060606] hover:bg-[#F5F5F5]"
+                >
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-3.5 w-3.5 text-[#8B8C8E]" />
+                    <span className="font-medium">{c.nombre}</span>
+                  </div>
+                  <span className="ml-2 shrink-0 rounded bg-[#F0F0F0] px-1.5 py-0.5 text-[10px] font-medium text-[#8B8C8E]">{c.plantillaInforme}</span>
+                </button>
+              ))}
+              {!cargando && resultados.length === 0 && (
+                <div className="px-3 py-2 text-xs text-[#8B8C8E]">
+                  {busqueda.trim() ? "Sin resultados" : "No hay clientes disponibles"}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {clientes.length === 0 && !mostrarDropdown && (
+        <p className="mt-1 text-xs text-[#8B8C8E]">Sin clientes asignados</p>
+      )}
+    </div>
+  );
+}
+
 export default function ProcesoDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -895,8 +1398,8 @@ export default function ProcesoDetailPage() {
   const [proceso, setProceso] = useState<ProcesoDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [archiving, setArchiving] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [clientesAsignados, setClientesAsignados] = useState<ClienteAsignado[]>([]);
 
   const tabParam = searchParams.get('tab');
   const initialTab = tabParam === 'analisis' ? 'analisis-ia' as const
@@ -982,42 +1485,22 @@ export default function ProcesoDetailPage() {
             {TIPO_PROCESO_LABELS[proceso.tipoProceso] ?? proceso.tipoProceso}
           </h1>
           <div className="mt-2 flex items-center gap-3">
-            <EstadoBadge estado={proceso.estadoActual} />
+            <EstadoSelector
+              procesoId={id}
+              estadoActual={proceso.estadoActual}
+              onUpdate={(estado) => setProceso((p) => p ? { ...p, estadoActual: estado as typeof p.estadoActual } : p)}
+            />
             <SemaforoBadge semaforo={proceso.semaforo} />
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <InformeButton procesoId={id} clientes={clientesAsignados} />
           <button
             onClick={() => router.push(`/procesos/${id}/editar`)}
             className="rounded-sm border border-[#060606] bg-white px-4 py-2 text-sm font-medium text-[#060606] transition-colors hover:bg-[#060606] hover:text-white"
           >
             Editar
           </button>
-          {proceso.estadoActual !== "ARCHIVADO" && (
-            <button
-              disabled={archiving}
-              onClick={async () => {
-                if (!window.confirm("¿Archivar este proceso? Esta acción cambia su estado a Archivado.")) return;
-                setArchiving(true);
-                try {
-                  const res = await fetch(`/api/procesos/${id}`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ estadoActual: "ARCHIVADO" }),
-                  });
-                  if (res.ok) {
-                    router.push("/procesos");
-                    router.refresh();
-                  }
-                } catch {
-                  setArchiving(false);
-                }
-              }}
-              className="rounded-sm border border-[#E8E9EA] bg-white px-4 py-2 text-sm font-medium text-[#8B8C8E] transition-colors hover:border-[#8B8C8E] disabled:opacity-50"
-            >
-              {archiving ? "Archivando..." : "Archivar"}
-            </button>
-          )}
         </div>
       </div>
 
@@ -1126,23 +1609,8 @@ export default function ProcesoDetailPage() {
           <div className="rounded-sm border border-[#E8E9EA] bg-white p-6">
             <SectionTitle title="Partes y Asignación" />
             <div className="space-y-5">
-              {/* Cliente */}
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-[#8B8C8E]">
-                  Cliente
-                </p>
-                <p className="mt-1 text-sm font-medium text-[#060606]">
-                  {proceso.cliente.nombre}
-                </p>
-                {proceso.cliente.nit && (
-                  <p className="mt-0.5 text-xs text-[#8B8C8E]">
-                    NIT: {proceso.cliente.nit}
-                  </p>
-                )}
-                <p className="mt-0.5 text-xs text-[#8B8C8E]">
-                  {proceso.cliente.tipo.replace(/_/g, " ")}
-                </p>
-              </div>
+              {/* Clientes Asignados */}
+              <ClientesAsignados procesoId={id} onClientesChange={setClientesAsignados} />
 
               {/* Separator */}
               <div className="border-t border-[#E8E9EA]" />

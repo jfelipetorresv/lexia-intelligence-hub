@@ -161,6 +161,16 @@ enum TipoCliente {
   OTRO
 }
 
+enum PlantillaCliente {
+  ZURICH
+  SURA
+  SEGUROS_DEL_ESTADO
+  HDI
+  MUNDIAL
+  CHUBB
+  GENERAL
+}
+
 model Cliente {
   id             String       @id @default(cuid())
   organizacionId String
@@ -172,12 +182,14 @@ model Cliente {
   contactoNombre String?
   contactoEmail  String?
   contactoTel    String?
+  plantillaInforme PlantillaCliente @default(GENERAL)
   activo         Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  procesos Proceso[]
-  polizas  Poliza[]
+  procesos       Proceso[]
+  procesosMulti  ProcesoCliente[]
+  polizas        Poliza[]
 
   @@map("clientes")
 }
@@ -251,11 +263,9 @@ enum ClaseProceso {
 }
 
 enum EstadoProceso {
-  ACTIVO
-  SUSPENDIDO
   TRASLADO_PREVIO
+  ACTIVO
   TERMINADO
-  ARCHIVADO
 }
 
 enum ResultadoProceso {
@@ -299,6 +309,7 @@ model Proceso {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  clientesMulti   ProcesoCliente[]
   polizas         ProcesoPoliza[]
   hitos           HitoProcesal[]
   asignaciones    Asignacion[]
@@ -311,6 +322,19 @@ model Proceso {
   chatMensajes     ChatMensaje[]
 
   @@map("procesos")
+}
+
+// Relación muchos-a-muchos Proceso ↔ Cliente
+model ProcesoCliente {
+  id        String   @id @default(cuid())
+  procesoId String
+  clienteId String
+  proceso   Proceso  @relation(fields: [procesoId], references: [id], onDelete: Cascade)
+  cliente   Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([procesoId, clienteId])
+  @@map("proceso_clientes")
 }
 
 // Relación muchos-a-muchos Proceso ↔ Póliza
@@ -497,6 +521,23 @@ model ValorSMMLV {
   creadoEn  DateTime @default(now())
 
   @@map("valor_smmlv")
+}
+
+// ============================================================
+// PLANTILLAS DE INFORME (Nivel 8)
+// ============================================================
+
+model PlantillaInforme {
+  id          String   @id @default(cuid())
+  nombre      String
+  tipoCliente String   // "aseguradora" | "empresa" | "persona" | "entidad_publica"
+  descripcion String?
+  secciones   Json     // Array de secciones configuradas para esta plantilla
+  activa      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("plantillas_informe")
 }
 
 // ============================================================

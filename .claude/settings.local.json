@@ -20,7 +20,11 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(git pull:*)",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Read(//tmp/**)",
+      "Bash(npx ts-node:*)",
+      "Bash(rm:*)",
+      "Bash(powershell:*)"
     ]
   }
 }

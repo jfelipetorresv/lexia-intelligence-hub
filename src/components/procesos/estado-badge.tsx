@@ -1,37 +1,27 @@
 import { ESTADO_PROCESO_LABELS } from "@/lib/formato";
 
 const estadoStyles: Record<string, React.CSSProperties> = {
+  TRASLADO_PREVIO: {
+    background: "rgba(139, 140, 142, 0.15)",
+    color: "#8B8C8E",
+    border: "1px solid rgba(139, 140, 142, 0.4)",
+  },
   ACTIVO: {
-    background: "rgba(0, 128, 128, 0.15)",
-    color: "#008080",
-    border: "1px solid rgba(0, 128, 128, 0.4)",
+    background: "rgba(22, 163, 74, 0.12)",
+    color: "#16a34a",
+    border: "1px solid rgba(22, 163, 74, 0.4)",
   },
   TERMINADO: {
     background: "rgba(6, 6, 6, 0.08)",
     color: "#060606",
     border: "1px solid rgba(6, 6, 6, 0.2)",
   },
-  SUSPENDIDO: {
-    background: "rgba(245, 158, 11, 0.15)",
-    color: "#92400E",
-    border: "1px solid rgba(245, 158, 11, 0.4)",
-  },
-  ARCHIVADO: {
-    background: "rgba(139, 140, 142, 0.15)",
-    color: "#8B8C8E",
-    border: "1px solid rgba(139, 140, 142, 0.4)",
-  },
-  TRASLADO_PREVIO: {
-    background: "rgba(133, 211, 212, 0.2)",
-    color: "#008080",
-    border: "1px solid rgba(0, 128, 128, 0.3)",
-  },
 };
 
 const defaultStyle: React.CSSProperties = {
-  background: "rgba(133, 211, 212, 0.2)",
-  color: "#008080",
-  border: "1px solid rgba(0, 128, 128, 0.3)",
+  background: "rgba(139, 140, 142, 0.15)",
+  color: "#8B8C8E",
+  border: "1px solid rgba(139, 140, 142, 0.4)",
 };
 
 export function EstadoBadge({ estado }: { estado: string }) {

@@ -25,11 +25,9 @@ export const TIPO_PROCESO_LABELS: Record<string, string> = {
 };
 
 export const ESTADO_PROCESO_LABELS: Record<string, string> = {
-  ACTIVO: "Activo",
-  SUSPENDIDO: "Suspendido",
   TRASLADO_PREVIO: "Traslado Previo",
+  ACTIVO: "Activo",
   TERMINADO: "Terminado",
-  ARCHIVADO: "Archivado",
 };
 
 /**
