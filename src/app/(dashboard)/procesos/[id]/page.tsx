@@ -17,9 +17,13 @@ import {
   Check,
   ChevronDown,
   MessageSquare,
+  StickyNote,
+  Trash2,
+  Pencil,
 } from "lucide-react";
 import { DocumentosPanel } from "@/components/DocumentosPanel";
 import { ChatIAPanel } from "@/components/procesos/ChatIAPanel";
+import { CalculadoraFinanciera } from "@/components/calculos/CalculadoraFinanciera";
 import { EstadoBadge } from "@/components/procesos/estado-badge";
 import { SemaforoBadge } from "@/components/procesos/semaforo-badge";
 import {
@@ -775,6 +779,113 @@ function AnalisisIASection({ procesoId }: { procesoId: string }) {
   );
 }
 
+function AnotacionPanel({ procesoId }: { procesoId: string }) {
+  const storageKey = `anotacion-${procesoId}`;
+  const [anotacion, setAnotacion] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [texto, setTexto] = useState("");
+
+  useEffect(() => {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) setAnotacion(saved);
+  }, [storageKey]);
+
+  const handleGuardar = () => {
+    if (!texto.trim()) return;
+    localStorage.setItem(storageKey, texto.trim());
+    setAnotacion(texto.trim());
+    setShowForm(false);
+    setEditing(false);
+    setTexto("");
+  };
+
+  const handleEditar = () => {
+    setTexto(anotacion || "");
+    setEditing(true);
+    setShowForm(true);
+  };
+
+  const handleEliminar = () => {
+    localStorage.removeItem(storageKey);
+    setAnotacion(null);
+  };
+
+  const handleCancelar = () => {
+    setShowForm(false);
+    setEditing(false);
+    setTexto("");
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Botón Nueva anotación */}
+      {!showForm && (
+        <button
+          onClick={() => { setTexto(""); setShowForm(true); setEditing(false); }}
+          className="flex w-full items-center gap-3 rounded-sm border border-[#E8E9EA] bg-white px-4 py-2.5 text-left text-sm font-medium text-[#060606] transition-colors hover:border-[#008080] hover:text-[#008080]"
+        >
+          <StickyNote className="h-4 w-4" />
+          Nueva anotación
+        </button>
+      )}
+
+      {/* Formulario inline */}
+      {showForm && (
+        <div className="rounded-sm border border-[#008080]/30 bg-[#FAFBFC] p-4">
+          <textarea
+            value={texto}
+            onChange={(e) => setTexto(e.target.value.slice(0, 500))}
+            placeholder="Escribe una anotación..."
+            rows={4}
+            maxLength={500}
+            className="w-full resize-none rounded-sm border border-[#E8E9EA] bg-white px-3 py-2 text-sm text-[#060606] placeholder:text-[#8B8C8E] focus:border-[#008080] focus:outline-none focus:ring-1 focus:ring-[#008080]"
+          />
+          <div className="mt-1 flex items-center justify-between">
+            <p className="text-[11px] text-[#8B8C8E]">{texto.length}/500</p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCancelar}
+                className="rounded-sm border border-[#E8E9EA] bg-white px-3 py-1.5 text-xs text-[#060606] hover:bg-[#FAFBFC]"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleGuardar}
+                disabled={!texto.trim()}
+                className="rounded-sm bg-[#008080] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#006666] disabled:opacity-50"
+              >
+                Guardar anotación
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Anotación guardada */}
+      {anotacion && !showForm && (
+        <div className="rounded-sm border border-amber-200 bg-amber-50 p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <StickyNote className="h-3.5 w-3.5 text-amber-600" />
+              <span className="text-[11px] font-medium uppercase tracking-wide text-amber-700">Anotación</span>
+            </div>
+            <div className="flex gap-1">
+              <button onClick={handleEditar} className="rounded-sm p-1 text-amber-600 hover:bg-amber-100" title="Editar">
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button onClick={handleEliminar} className="rounded-sm p-1 text-amber-600 hover:bg-red-100 hover:text-red-600" title="Eliminar">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+          <p className="text-sm leading-relaxed text-[#060606] whitespace-pre-wrap">{anotacion}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProcesoDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -790,8 +901,9 @@ export default function ProcesoDetailPage() {
   const tabParam = searchParams.get('tab');
   const initialTab = tabParam === 'analisis' ? 'analisis-ia' as const
     : tabParam === 'documentos' ? 'documentos' as const
+    : tabParam === 'calculadora' ? 'calculadora' as const
     : 'detalle' as const;
-  const [activeTab, setActiveTab] = useState<"detalle" | "documentos" | "analisis-ia">(initialTab);
+  const [activeTab, setActiveTab] = useState<"detalle" | "documentos" | "analisis-ia" | "calculadora">(initialTab);
 
   useEffect(() => {
     async function fetchData() {
@@ -915,6 +1027,7 @@ export default function ProcesoDetailPage() {
           { key: "detalle" as const, label: "Detalle", icon: ClipboardList },
           { key: "documentos" as const, label: "Documentos", icon: FolderOpen },
           { key: "analisis-ia" as const, label: "An\u00e1lisis IA", icon: Sparkles },
+          { key: "calculadora" as const, label: "Calculadora", icon: Calculator },
         ]).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -943,6 +1056,11 @@ export default function ProcesoDetailPage() {
       {/* Tab: Análisis IA */}
       {activeTab === "analisis-ia" && (
         <AnalisisIASection procesoId={id} />
+      )}
+
+      {/* Tab: Calculadora */}
+      {activeTab === "calculadora" && (
+        <CalculadoraFinanciera procesoId={id} />
       )}
 
       {/* Tab: Detalle */}
@@ -1083,7 +1201,6 @@ export default function ProcesoDetailPage() {
               {[
                 { icon: ClipboardList, label: "Registrar Hito" },
                 { icon: Paperclip, label: "Adjuntar Documento" },
-                { icon: Calculator, label: "Calcular Indexación" },
                 { icon: FileText, label: "Generar Informe" },
               ].map(({ icon: Icon, label }) => (
                 <button
@@ -1096,6 +1213,9 @@ export default function ProcesoDetailPage() {
               ))}
             </div>
           </div>
+
+          {/* Card: Anotación */}
+          <AnotacionPanel procesoId={id} />
         </div>
       </div>
       )}

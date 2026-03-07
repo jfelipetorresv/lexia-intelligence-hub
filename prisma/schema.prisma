@@ -486,27 +486,52 @@ model ChatMensaje {
 }
 
 // ============================================================
-// CÁLCULOS FINANCIEROS (base para Nivel 7)
+// SMMLV — Salario Mínimo Mensual Legal Vigente
 // ============================================================
 
-enum TipoCalculo {
-  INDEXACION_IPC
-  LUCRO_CESANTE
-  PERJUICIOS_MORALES
-  INTERESES_MORATORIOS
+model ValorSMMLV {
+  id        Int      @id @default(autoincrement())
+  anio      Int      @unique
+  valor     Float
+  decreto   String?  // ej: "Decreto 1469 del 29 dic 2025"
+  creadoEn  DateTime @default(now())
+
+  @@map("valor_smmlv")
 }
 
+// ============================================================
+// ÍNDICE IPC (fuente DANE, base 2018=100)
+// ============================================================
+
+model IndiceIPC {
+  id      Int      @id @default(autoincrement())
+  anio    Int
+  mes     Int      // 1 a 12
+  valor   Float    // índice base 2018=100
+  fuente  String   @default("DANE")
+  creadoEn DateTime @default(now())
+
+  @@unique([anio, mes])
+  @@map("indice_ipc")
+}
+
+// ============================================================
+// CÁLCULOS FINANCIEROS (Nivel 7)
+// ============================================================
+
 model CalculoFinanciero {
-  id         String      @id @default(cuid())
-  procesoId  String
-  proceso    Proceso     @relation(fields: [procesoId], references: [id], onDelete: Cascade)
-  tipo       TipoCalculo
-  parametros Json
-  resultado  Decimal?    @db.Decimal(20, 2)
-  detalle    Json?
-  creadoPor  String?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  id             String   @id @default(cuid())
+  procesoId      String
+  proceso        Proceso  @relation(fields: [procesoId], references: [id], onDelete: Cascade)
+  tipoCalculo    String   // INDEXACION, LUCRO_CESANTE_CONSOLIDADO, LUCRO_CESANTE_FUTURO, PERJUICIOS_MORALES, INTERESES_MORATORIOS
+  nombre         String
+  parametros     Json
+  resultado      Json
+  totalCalculado Float
+  notas          String?
+  creadoPor      String?
+  creadoEn       DateTime @default(now())
+  actualizadoEn  DateTime @updatedAt
 
   @@map("calculos_financieros")
 }

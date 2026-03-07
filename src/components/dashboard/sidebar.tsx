@@ -10,6 +10,7 @@ import {
   FileText,
   Sparkles,
   Settings,
+  DollarSign,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/documentos", label: "Documentos", icon: FileText },
   { href: "/ai/extraer", label: "Análisis IA", icon: Sparkles },
   { href: "/configuracion", label: "Configuración", icon: Settings },
+  { href: "/admin/smmlv", label: "SMMLV", icon: DollarSign, section: "admin" },
 ];
 
 export function Sidebar() {
@@ -44,27 +46,40 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-0.5 px-0 py-5">
-        {navItems.map((item) => {
+        {navItems.map((item, idx) => {
           const isActive =
             item.href === "/"
               ? pathname === "/"
               : pathname.startsWith(item.href);
 
+          const prevItem = navItems[idx - 1];
+          const showAdminDivider =
+            (item as { section?: string }).section === "admin" &&
+            (!prevItem || !(prevItem as { section?: string }).section);
+
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "relative flex items-center gap-3 px-7 py-2.5 text-[13px] font-medium tracking-wide transition-colors",
-                isActive
-                  ? "bg-[rgba(0,128,128,0.12)] text-white before:absolute before:left-0 before:top-0 before:h-full before:w-[2px] before:bg-[#008080]"
-                  : "text-white/[0.65] hover:bg-white/[0.06] hover:text-white/90"
+            <div key={item.href}>
+              {showAdminDivider && (
+                <div className="mx-5 my-3 border-t border-white/[0.08]">
+                  <p className="mt-3 px-2 text-[10px] font-medium uppercase tracking-widest text-white/30">
+                    Administración
+                  </p>
+                </div>
               )}
-              style={{ fontFamily: "'DM Sans', sans-serif" }}
-            >
-              <item.icon className="h-4 w-4" />
-              {item.label}
-            </Link>
+              <Link
+                href={item.href}
+                className={cn(
+                  "relative flex items-center gap-3 px-7 py-2.5 text-[13px] font-medium tracking-wide transition-colors",
+                  isActive
+                    ? "bg-[rgba(0,128,128,0.12)] text-white before:absolute before:left-0 before:top-0 before:h-full before:w-[2px] before:bg-[#008080]"
+                    : "text-white/[0.65] hover:bg-white/[0.06] hover:text-white/90"
+                )}
+                style={{ fontFamily: "'DM Sans', sans-serif" }}
+              >
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            </div>
           );
         })}
       </nav>

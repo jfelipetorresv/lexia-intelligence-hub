@@ -16,7 +16,11 @@
       "Bash(netstat:*)",
       "Bash(npm list:*)",
       "Bash(npm:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(npx tsx:*)"
     ]
   }
 }
